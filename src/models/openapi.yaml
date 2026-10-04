@@ -1,0 +1,152 @@
+openapi: 3.0.0
+info:
+  title: Motsamai Platform API
+  description: Backend API for Lesotho's premier ride-sharing platform.
+  version: 2.0.0
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local development server
+  - url: https://api.easygo.ls/api/v1
+    description: Production server
+
+components:
+  securitySchemes:itoes too
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [user, driver, admin] }
+        is_active: { type: boolean }
+    
+    Ride:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        rider_id: { type: string, format: uuid }
+        driver_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, searching, accepted, arrived, picked_up, completed, cancelled] }
+        fare_amount: { type: number, format: float }
+        pickup_address: { type: string }
+        dropoff_address: { type: string }
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email: { type: string }
+                password: { type: string, minLength: 8 }
+                name: { type: string }
+                role: { type: string, default: rider }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /auth/login:
+    post:
+      summary: User login
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+
+  /rides/book:
+    post:
+      summary: Book a new ride
+      tags: [Rides]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pickup_location, dropoff_location]
+              properties:
+                pickup_location:
+                  type: object
+                  properties:
+                    lat: { type: number }
+                    lng: { type: number }
+                    address: { type: string }
+                dropoff_location:
+                  type: object
+                  properties:
+                    lat: { type: number }
+                    lng: { type: number }
+                    address: { type: string }
+                ride_type: { type: string, enum: [standard, premium, van] }
+      responses:
+        '201':
+          description: Ride created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ride'
+
+  /admin/dashboard:
+    get:
+      summary: Get dashboard statistics
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Statistics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userMetrics:
+                    type: object
+                    properties:
+                      totalUsers: { type: integer }
+                      monthlyGrowth: { type: integer }
+                  rideMetrics:
+                    type: object
+                    properties:
+                      activeRides: { type: integer }
+                  financialMetrics:
+                    type: object
+                    properties:
+                      todayRevenue: { type: number }
+                  timestamp: { type: string, format: date-time }

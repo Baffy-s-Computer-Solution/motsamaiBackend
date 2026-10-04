@@ -1,0 +1,531 @@
+﻿web-backend/
+
+├── web-backend
+│   ├── .dockerignore
+│   ├── .env.ci
+│   ├── .env.development
+│   ├── .env.example
+│   ├── .env.payment.example
+│   ├── .env.production
+│   ├── .env.production.example
+│   ├── .env.staging
+│   ├── .env.test
+│   ├── .eslintignore
+│   ├── .eslintrc.js
+│   ├── .gitattributes
+│   ├── .gitignore
+│   ├── .istanbul.yml
+│   ├── .mocharc.json
+│   ├── .npmrc
+│   ├── .nycrc.json
+│   ├── .prettierignore
+│   ├── .prettierrc
+│   ├── .sequelizerc
+│   ├── app.js
+│   ├── cluster.js
+│   ├── config
+│   │   ├── config.js
+│   │   └── migration-schema.js
+│   ├── deploy-gcr.ps1
+│   ├── deployment-report-cynthia-mofoka.txt
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   ├── Dockerfile.dev
+│   ├── Dockerfile.staging
+│   ├── ecosystem.config.js
+│   ├── filetree.txt
+│   ├── git commands
+│   ├── install-web-backend-service.ps1
+│   ├── jest.config.js
+│   ├── k8s
+│   │   ├── configmap.yaml
+│   │   ├── deployment.yaml
+│   │   ├── hpa.yaml
+│   │   ├── ingress.yaml
+│   │   ├── secret.yaml
+│   │   └── service.yaml
+│   ├── logs
+│   │   ├── .0722f532e455b972551eb001012b0fc0e43d0112-audit.json
+│   │   ├── .879ce8fcf8415a47f23198497f2ab44c4e475d90-audit.json
+│   │   ├── app.log
+│   │   ├── application-2026-06-15.log
+│   │   ├── combined.log
+│   │   ├── development.log
+│   │   ├── error.log
+│   │   ├── error-2026-06-15.log
+│   │   ├── exceptions.log
+│   │   ├── rejections.log
+│   │   ├── server.err.log
+│   │   └── server.out.log
+│   ├── migrations
+│   │   ├── .gitkeep
+│   │   ├── 20240101000000-create-users.js
+│   │   ├── 20240101000001-create-drivers.js
+│   │   ├── 20240101000002-create-rides.js
+│   │   ├── 20240101000003-create-payments.js
+│   │   ├── 20240101000004-create-promotions.js
+│   │   ├── 20240101000005-create-zones.js
+│   │   ├── 20240101000006-create-vehicles.js
+│   │   ├── 20240101000007-create-incidents.js
+│   │   ├── 20240101000008-create-reviews.js
+│   │   ├── 20240101000009-create-support-tickets.js
+│   │   ├── 20240101000010-create-audit-logs.js
+│   │   ├── 20240101000011-create-notifications.js
+│   │   ├── 20240101000012-create-webhooks.js
+│   │   ├── 20240101000013-create-reports.js
+│   │   ├── 20240101000014-create-roles.js
+│   │   ├── 20240101000015-create-permissions.js
+│   │   ├── 20240101000016-create-sessions.js
+│   │   ├── 20240101000017-create-refresh-tokens.js
+│   │   ├── 20240101000018-create-invite-codes.js
+│   │   ├── 20240101000019-create-referrals.js
+│   │   ├── 20240101000020-create-wallets.js
+│   │   ├── 20240101000021-create-transactions.js
+│   │   ├── 20240101000022-create-location-histories.js
+│   │   ├── 20240101000023-create-device-infos.js
+│   │   ├── 20240101000024-create-settings.js
+│   │   ├── 20240101000025-add-indexes.js
+│   │   ├── 20240101000026-add-foreign-keys.js
+│   │   ├── 20240101000027-add-triggers.sql.js
+│   │   ├── 20240101000028-create-views.sql.js
+│   │   ├── 20240101000029-create-materialized-views.sql.js
+│   │   ├── 20240615000000-add-socket-id-to-users.js
+│   │   ├── 20240615000001-create-zones-table.js
+│   │   ├── 20260609000000-initial-production-schema.js
+│   │   ├── 20260609000001-create-audit-log.js
+│   │   └── 20260615000000-add-current-location-to-drivers.js
+│   ├── nodemon.json
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── postgres-integration-report.md
+│   ├── README.md
+│   ├── scripts
+│   │   ├── healthcheck.js
+│   │   ├── migrate.js
+│   │   ├── seed.js
+│   │   ├── test-firebase-adc.js
+│   │   └── validate-env.js
+│   ├── seeders
+│   │   ├── .gitkeep
+│   │   ├── 20240101000000-roles.js
+│   │   ├── 20240101000001-permissions.js
+│   │   ├── 20240101000002-admin-user.js
+│   │   ├── 20240101000003-demo-users.js
+│   │   ├── 20240101000004-demo-drivers.js
+│   │   ├── 20240101000005-demo-rides.js
+│   │   ├── 20240101000006-demo-zones.js
+│   │   ├── 20240101000007-demo-promotions.js
+│   │   ├── 20240101000008-demo-reviews.js
+│   │   ├── 20240101000009-demo-incidents.js
+│   │   └── index.js
+│   ├── server.js
+│   ├── src
+│   │   ├── .gitkeep
+│   │   ├── adapters
+│   │   │   ├── email.adapter.js
+│   │   │   ├── index.js
+│   │   │   ├── payment.adapter.js
+│   │   │   ├── sms.adapter.js
+│   │   │   └── storage.adapter.js
+│   │   ├── commands
+│   │   │   ├── book-ride.command.js
+│   │   │   ├── create-user.command.js
+│   │   │   └── index.js
+│   │   ├── config
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── cache-strategies.js
+│   │   │   ├── circuit-breaker.js
+│   │   │   ├── cors.js
+│   │   │   ├── database.js
+│   │   │   ├── ecocash.js
+│   │   │   ├── elasticsearch.js
+│   │   │   ├── firebase.js
+│   │   │   ├── helmet.js
+│   │   │   ├── index.js
+│   │   │   ├── kafka.js
+│   │   │   ├── logger.js
+│   │   │   ├── mpesa.js
+│   │   │   ├── passport.js
+│   │   │   ├── rabbitmq.js
+│   │   │   ├── rate-limiting.js
+│   │   │   ├── redis.js
+│   │   │   ├── retry-policies.js
+│   │   │   ├── s3.js
+│   │   │   ├── sendgrid.js
+│   │   │   ├── stripe.js
+│   │   │   ├── swagger.js
+│   │   │   └── twilio.js
+│   │   ├── constants
+│   │   │   ├── api.constants.js
+│   │   │   ├── error.constants.js
+│   │   │   ├── index.js
+│   │   │   └── status.constants.js
+│   │   ├── controllers
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── admin.controller.js
+│   │   │   ├── analyticsController.js
+│   │   │   ├── authController.js
+│   │   │   ├── baseController.js
+│   │   │   ├── driverController.js
+│   │   │   ├── exportController.js
+│   │   │   ├── fleetController.js
+│   │   │   ├── healthController.js
+│   │   │   ├── importController.js
+│   │   │   ├── incidentController.js
+│   │   │   ├── metricsController.js
+│   │   │   ├── mobileMoneyController.js
+│   │   │   ├── notificationController.js
+│   │   │   ├── paymentController.js
+│   │   │   ├── promotionController.js
+│   │   │   ├── reportController.js
+│   │   │   ├── reviewController.js
+│   │   │   ├── ride.controller.js
+│   │   │   ├── rideController.js
+│   │   │   ├── supportController.js
+│   │   │   ├── uploadController.js
+│   │   │   ├── userController.js
+│   │   │   ├── webhookController.js
+│   │   │   └── zoneController.js
+│   │   ├── data
+│   │   │   └── mockUsers.js
+│   │   ├── decorators
+│   │   │   ├── auth.decorator.js
+│   │   │   ├── index.js
+│   │   │   ├── rbac.decorator.js
+│   │   │   └── validate.decorator.js
+│   │   ├── events
+│   │   │   ├── index.js
+│   │   │   ├── ride.event.js
+│   │   │   └── user.event.js
+│   │   ├── exceptions
+│   │   │   ├── api.exception.js
+│   │   │   ├── auth.exception.js
+│   │   │   ├── base.exception.js
+│   │   │   ├── index.js
+│   │   │   └── validation.exception.js
+│   │   ├── factories
+│   │   │   ├── index.js
+│   │   │   ├── payment.factory.js
+│   │   │   ├── ride.factory.js
+│   │   │   └── user.factory.js
+│   │   ├── helpers
+│   │   │   ├── array.helper.js
+│   │   │   ├── index.js
+│   │   │   ├── object.helper.js
+│   │   │   └── string.helper.js
+│   │   ├── interfaces
+│   │   │   ├── index.ts
+│   │   │   ├── ride.interface.ts
+│   │   │   └── user.interface.ts
+│   │   ├── jobs
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── analyticsJobs.js
+│   │   │   ├── auditJobs.js
+│   │   │   ├── backupJobs.js
+│   │   │   ├── cleanupJobs.js
+│   │   │   ├── index.js
+│   │   │   ├── notificationJobs.js
+│   │   │   ├── paymentJobs.js
+│   │   │   ├── reportJobs.js
+│   │   │   └── worker.js
+│   │   ├── listeners
+│   │   │   ├── index.js
+│   │   │   ├── payment.listener.js
+│   │   │   └── ride.listener.js
+│   │   ├── middleware
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── audit.middleware.js
+│   │   │   ├── auditLogger.js
+│   │   │   ├── auth.js
+│   │   │   ├── auth.validation.js
+│   │   │   ├── authorizeRoles.js
+│   │   │   ├── cache.js
+│   │   │   ├── circuitBreaker.js
+│   │   │   ├── compression.js
+│   │   │   ├── correlationId.js
+│   │   │   ├── cors.js
+│   │   │   ├── error.middleware.js
+│   │   │   ├── errorHandler.js
+│   │   │   ├── helmet.js
+│   │   │   ├── notFound.js
+│   │   │   ├── pagination.js
+│   │   │   ├── paymentRateLimiter.js
+│   │   │   ├── rateLimiter.js
+│   │   │   ├── rbac.js
+│   │   │   ├── requestId.js
+│   │   │   ├── requestLogger.js
+│   │   │   ├── ride.validation.js
+│   │   │   ├── sanitize.js
+│   │   │   ├── security.js
+│   │   │   ├── timeout.js
+│   │   │   ├── validate.js
+│   │   │   └── validation.js
+│   │   ├── models
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── associations.js
+│   │   │   ├── AuditLog.js
+│   │   │   ├── auditLog.model.js
+│   │   │   ├── DeviceInfo.js
+│   │   │   ├── Driver.js
+│   │   │   ├── extraModels.js
+│   │   │   ├── Incident.js
+│   │   │   ├── index.js
+│   │   │   ├── InviteCode.js
+│   │   │   ├── LocationHistory.js
+│   │   │   ├── MobileMoneyTransaction.js
+│   │   │   ├── Notification.js
+│   │   │   ├── Payment.js
+│   │   │   ├── PaymentWebhookLog.js
+│   │   │   ├── Permission.js
+│   │   │   ├── Promotion.js
+│   │   │   ├── Referral.js
+│   │   │   ├── RefreshToken.js
+│   │   │   ├── Report.js
+│   │   │   ├── Review.js
+│   │   │   ├── Ride.js
+│   │   │   ├── Role.js
+│   │   │   ├── Session.js
+│   │   │   ├── Settings.js
+│   │   │   ├── SupportTicket.js
+│   │   │   ├── Transaction.js
+│   │   │   ├── User.js
+│   │   │   ├── Vehicle.js
+│   │   │   ├── Wallet.js
+│   │   │   ├── Webhook.js
+│   │   │   └── Zone.js
+│   │   ├── queues
+│   │   │   ├── email.queue.js
+│   │   │   ├── index.js
+│   │   │   ├── notification.queue.js
+│   │   │   └── report.queue.js
+│   │   ├── repositories
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── auditLog.repository.js
+│   │   │   ├── auditRepository.js
+│   │   │   ├── base.repository.js
+│   │   │   ├── baseRepository.js
+│   │   │   ├── driver.repository.js
+│   │   │   ├── driverRepository.js
+│   │   │   ├── incident.repository.js
+│   │   │   ├── incidentRepository.js
+│   │   │   ├── index.js
+│   │   │   ├── notificationRepository.js
+│   │   │   ├── paymentRepository.js
+│   │   │   ├── promotion.repository.js
+│   │   │   ├── promotionRepository.js
+│   │   │   ├── review.repository.js
+│   │   │   ├── reviewRepository.js
+│   │   │   ├── ride.repository.js
+│   │   │   ├── rideRepository.js
+│   │   │   ├── supportRepository.js
+│   │   │   ├── user.repository.js
+│   │   │   ├── userRepository.js
+│   │   │   ├── vehicle.repository.js
+│   │   │   └── zoneRepository.js
+│   │   ├── routes
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── driver.routes.js
+│   │   │   ├── index.js
+│   │   │   ├── payment.routes.js
+│   │   │   ├── ride.routes.js
+│   │   │   └── v1
+│   │   │       ├── .gitkeep
+│   │   │       ├── __init__.js
+│   │   │       ├── __tests__
+│   │   │       │   └── .gitkeep
+│   │   │       ├── adminRoutes.js
+│   │   │       ├── analyticsRoutes.js
+│   │   │       ├── authRoutes.js
+│   │   │       ├── driverRoutes.js
+│   │   │       ├── fleetRoutes.js
+│   │   │       ├── healthRoutes.js
+│   │   │       ├── incidentRoutes.js
+│   │   │       ├── notificationRoutes.js
+│   │   │       ├── paymentRoutes.js
+│   │   │       ├── promotionRoutes.js
+│   │   │       ├── reportRoutes.js
+│   │   │       ├── reviewRoutes.js
+│   │   │       ├── rideRoutes.js
+│   │   │       ├── supportRoutes.js
+│   │   │       ├── uploadRoutes.js
+│   │   │       ├── userRoutes.js
+│   │   │       ├── webhookRoutes.js
+│   │   │       └── zoneRoutes.js
+│   │   ├── sandbox
+│   │   │   ├── controllers
+│   │   │   │   └── sandboxController.js
+│   │   │   ├── routes
+│   │   │   │   ├── sandboxRoutes.js
+│   │   │   │   ├── testDataGenerator.js
+│   │   │   │   └── transactionSimulator.js
+│   │   │   ├── services
+│   │   │   └── simulators
+│   │   │       ├── ecocashSimulator.js
+│   │   │       └── mpesaSimulator.js
+│   │   ├── services
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── 20240609000001-production-seed.js
+│   │   │   ├── analyticsService.js
+│   │   │   ├── auditLogService.js
+│   │   │   ├── auditService.js
+│   │   │   ├── authService.js
+│   │   │   ├── base.service.js
+│   │   │   ├── cacheService.js
+│   │   │   ├── dispatchService.js
+│   │   │   ├── distanceMatrixService.js
+│   │   │   ├── driverService.js
+│   │   │   ├── ecocash.service.js
+│   │   │   ├── emailService.js
+│   │   │   ├── exportService.js
+│   │   │   ├── firestoreUserService.js
+│   │   │   ├── fleetService.js
+│   │   │   ├── fraudDetection.service.js
+│   │   │   ├── geocodingService.js
+│   │   │   ├── healthService.js
+│   │   │   ├── importService.js
+│   │   │   ├── incidentService.js
+│   │   │   ├── matching.service.js
+│   │   │   ├── mpesa.service.js
+│   │   │   ├── notificationService.js
+│   │   │   ├── paymentService.js
+│   │   │   ├── pricingService.js
+│   │   │   ├── promotionService.js
+│   │   │   ├── pushNotificationService.js
+│   │   │   ├── queueService.js
+│   │   │   ├── reportService.js
+│   │   │   ├── reviewService.js
+│   │   │   ├── rideService.js
+│   │   │   ├── searchService.js
+│   │   │   ├── smsService.js
+│   │   │   ├── socketService.js
+│   │   │   ├── storageService.js
+│   │   │   ├── supportService.js
+│   │   │   ├── thirdPartyService.js
+│   │   │   ├── trackingService.js
+│   │   │   ├── userService.js
+│   │   │   ├── vehicleService.js
+│   │   │   ├── webhookService.js
+│   │   │   └── zoneService.js
+│   │   ├── strategies
+│   │   │   ├── auth.strategy.js
+│   │   │   ├── dispatch.strategy.js
+│   │   │   ├── index.js
+│   │   │   └── pricing.strategy.js
+│   │   ├── subscribers
+│   │   │   ├── index.js
+│   │   │   ├── ride.subscriber.js
+│   │   │   └── user.subscriber.js
+│   │   ├── transformers
+│   │   │   ├── index.js
+│   │   │   ├── payment.transformer.js
+│   │   │   ├── ride.transformer.js
+│   │   │   └── user.transformer.js
+│   │   ├── types
+│   │   │   ├── express.d.ts
+│   │   │   ├── index.d.ts
+│   │   │   └── models.d.ts
+│   │   ├── utils
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── apiError.js
+│   │   │   ├── apiResponse.js
+│   │   │   ├── arrayHelpers.js
+│   │   │   ├── asyncHandler.js
+│   │   │   ├── cacheKeys.js
+│   │   │   ├── constants.js
+│   │   │   ├── csvParser.js
+│   │   │   ├── dateHelpers.js
+│   │   │   ├── distanceCalculator.js
+│   │   │   ├── encryption.js
+│   │   │   ├── etaCalculator.js
+│   │   │   ├── excelGenerator.js
+│   │   │   ├── featureFlags.js
+│   │   │   ├── fileUpload.js
+│   │   │   ├── geoHelpers.js
+│   │   │   ├── jwt.js
+│   │   │   ├── logger.js
+│   │   │   ├── metrics.js
+│   │   │   ├── mobileMoneyHelpers.js
+│   │   │   ├── notificationHelper.js
+│   │   │   ├── otp.js
+│   │   │   ├── password.js
+│   │   │   ├── pdfGenerator.js
+│   │   │   ├── priceCalculator.js
+│   │   │   ├── response.util.js
+│   │   │   ├── stringHelpers.js
+│   │   │   ├── transactionIdempotency.js
+│   │   │   └── validationHelpers.js
+│   │   ├── validators
+│   │   │   ├── .gitkeep
+│   │   │   ├── __tests__
+│   │   │   │   └── .gitkeep
+│   │   │   ├── auth.validator.js
+│   │   │   ├── authValidator.js
+│   │   │   ├── customValidators.js
+│   │   │   ├── driverValidator.js
+│   │   │   ├── incidentValidator.js
+│   │   │   ├── index.js
+│   │   │   ├── paymentValidator.js
+│   │   │   ├── promotionValidator.js
+│   │   │   ├── reportValidator.js
+│   │   │   ├── reviewValidator.js
+│   │   │   ├── rideValidator.js
+│   │   │   ├── supportValidator.js
+│   │   │   ├── userValidator.js
+│   │   │   └── zoneValidator.js
+│   │   ├── webhooks
+│   │   │   ├── ecocashWebhook.js
+│   │   │   └── mpesaWebhook.js
+│   │   └── workers
+│   │       ├── .gitkeep
+│   │       ├── __tests__
+│   │       │   └── .gitkeep
+│   │       ├── cleanupWorker.js
+│   │       ├── emailWorker.js
+│   │       ├── exportWorker.js
+│   │       ├── importWorker.js
+│   │       ├── pushWorker.js
+│   │       ├── reportWorker.js
+│   │       ├── smsWorker.js
+│   │       └── webhookWorker.js
+│   ├── start-web-backend.cmd
+│   ├── swagger.js
+│   ├── swagger.json
+│   ├── swagger.yaml
+│   ├── tests
+│   │   ├── .gitkeep
+│   │   ├── e2e
+│   │   │   └── workflows.test.js
+│   │   ├── fixtures
+│   │   │   └── data.js
+│   │   ├── integration
+│   │   │   ├── .gitkeep
+│   │   │   ├── api.test.js
+│   │   │   ├── database.test.js
+│   │   │   └── payment.test.js
+│   │   ├── mocks
+│   │   │   └── services.js
+│   │   └── unit
+│   │       ├── .gitkeep
+│   │       ├── auth.test.js
+│   │       ├── health.test.js
+│   │       ├── ride.test.js
+│   │       └── user.test.js
+│   └── uninstall-web-backend-service.ps1

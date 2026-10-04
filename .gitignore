@@ -1,0 +1,279 @@
+# =========================================================
+# FULL .gitignore FOR:
+# React
+# Node.js
+# Python / AI / ML
+# VSCode / JetBrains
+# Env & Secrets
+# Build Outputs
+# OS junk
+# =========================================================
+
+# =========================
+# ENV FILES & SECRETS
+# =========================
+.env
+.env.*
+!.env.example
+
+# API keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# =========================
+# NODE / REACT
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+
+# React build
+build/
+dist/
+out/
+.next/
+.nuxt/
+.vercel/
+.cache/
+.parcel-cache/
+
+# Vite
+vite.svg
+
+# TurboRepo
+.turbo/
+
+# Expo / React Native
+.expo/
+.expo-shared/
+
+# Storybook
+storybook-static/
+
+# =========================
+# TYPESCRIPT
+# =========================
+*.tsbuildinfo
+
+# =========================
+# PYTHON / AI / ML
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python virtual envs
+venv/
+env/
+ENV/
+.venv/
+.python-version
+
+# Pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Distribution / packaging
+.Python
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# PyCharm
+.idea/
+
+# ML / AI models
+*.h5
+*.hdf5
+*.keras
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.pb
+*.tflite
+*.joblib
+*.pkl
+*.pickle
+
+# TensorBoard
+runs/
+logs/
+
+# Datasets
+data/
+datasets/
+*.csv
+*.tsv
+*.zip
+*.tar.gz
+
+# HuggingFace
+.cache/huggingface/
+transformers_cache/
+
+# =========================
+# DJANGO / FLASK / FASTAPI
+# =========================
+*.sqlite3
+db.sqlite3
+instance/
+.webassets-cache
+
+# FastAPI
+.fastapi/
+
+# =========================
+# LOG FILES
+# =========================
+logs/
+*.log
+
+# =========================
+# TEST OUTPUTS
+# =========================
+coverage/
+.nyc_output/
+
+# =========================
+# IDES & EDITORS
+# =========================
+
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# JetBrains
+.idea/
+*.iml
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+
+# =========================
+# OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# DOCKER
+# =========================
+.docker/
+
+# Docker compose overrides
+docker-compose.override.yml
+
+# =========================
+# TEMP FILES
+# =========================
+tmp/
+temp/
+*.tmp
+
+# =========================
+# CACHE
+# =========================
+.eslintcache
+.stylelintcache
+
+# =========================
+# SERVERLESS
+# =========================
+.serverless/
+.aws-sam/
+
+# =========================
+# FIREBASE
+# =========================
+.firebase/
+
+# =========================
+# NETLIFY
+# =========================
+.netlify/
+
+# =========================
+# HEROKU
+# =========================
+.heroku/
+
+# =========================
+# MAC
+# =========================
+.AppleDouble
+.LSOverride
+
+# =========================
+# WINDOWS
+# =========================
+ehthumbs.db
+Icon?
+
+# =========================
+# LINUX
+# =========================
+*~
+
+# =========================
+# SECURITY
+# =========================
+secrets/
+credentials/
+*.secret
+
+# =========================
+# MISC
+# =========================
+*.bak
+*.old
+*.orig
+*.rej
