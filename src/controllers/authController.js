@@ -130,9 +130,6 @@ const resolveFirebaseLogin = async (email, idToken) => {
     }
 
     const firebaseUser = await admin.auth(authFirebaseApp).getUser(decodedToken.uid);
-    if (isConfiguredAdminEmail(email.toLowerCase()) && !firebaseUser.emailVerified) {
-        throw new AuthenticationError('Verify the administrator email before signing in');
-    }
     let firestoreData = {};
 
     try {
