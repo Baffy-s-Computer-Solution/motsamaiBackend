@@ -76,7 +76,10 @@ const callHandler = (handler, req) => new Promise((resolve, reject) => {
 describe('Firebase authentication when Postgres is unavailable', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUserFindOne.mockRejectedValue({ name: 'SequelizeConnectionRefusedError' });
+    mockUserFindOne.mockRejectedValue({
+      name: 'SequelizeConnectionRefusedError',
+      message: 'Postgres connection refused',
+    });
     mockPersistFirebaseUserProfile.mockImplementation(async (profile) => profile);
     mockSyncFirebaseRoleClaims.mockResolvedValue(undefined);
     mockSyncUserToFirestore.mockResolvedValue(undefined);
@@ -121,6 +124,25 @@ describe('Firebase authentication when Postgres is unavailable', () => {
       firebase_uid: 'firebase-rider-uid',
       role: 'rider',
       is_verified: true,
+    }));
+  });
+
+  it('persists Firebase-authenticated users missing from Postgres into Firestore', async () => {
+    mockUserFindOne.mockResolvedValue(null);
+
+    const response = await callHandler(authController.login, {
+      body: { email: 'rider@example.com', idToken: 'firebase-id-token' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.user).toEqual(expect.objectContaining({
+      id: 'firebase-rider-uid',
+      email: 'rider@example.com',
+      role: 'rider',
+    }));
+    expect(mockPersistFirebaseUserProfile).toHaveBeenCalledWith(expect.objectContaining({
+      firebase_uid: 'firebase-rider-uid',
+      role: 'rider',
     }));
   });
 

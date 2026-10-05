@@ -34,6 +34,7 @@ const auth = async (req, res, next) => {
     const decoded = jwt.verify(token, config.JWT.secret);
     
     let user;
+    let databaseUnavailable = false;
     const firebaseOnlyUser = decoded.firebase_uid && decoded.firebase_uid === decoded.id;
     if (!firebaseOnlyUser) {
       try {
@@ -42,6 +43,7 @@ const auth = async (req, res, next) => {
         });
       } catch (dbError) {
         if (!isDatabaseUnavailable(dbError)) throw dbError;
+        databaseUnavailable = true;
         logger.warn('Postgres unavailable during auth lookup; checking Firestore user profile', { error: dbError.message });
       }
     }
@@ -58,6 +60,9 @@ const auth = async (req, res, next) => {
     }
 
     if (!user) {
+      if (!databaseUnavailable) {
+        throw new AuthenticationError('User not found');
+      }
       user = {
         id: decoded.id,
         firebase_uid: decoded.firebase_uid || null,

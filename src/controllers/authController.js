@@ -515,11 +515,22 @@ exports.login = asyncHandler(async (req, res) => {
             const firebaseProfile = await resolveFirebaseLogin(normalizedEmail, idToken);
             if (firebaseProfile) {
                 if (!user) {
+                    if (!firebaseProfile.is_verified) {
+                        throw new AuthenticationError('Please verify your email before signing in');
+                    }
+                    firebaseProfile.last_login_at = new Date();
+                    const persistedProfile = await persistFirebaseProfile(firebaseProfile);
+                    const firestoreUser = buildFirebaseUserProfile({
+                        uid: firebaseProfile.firebase_uid,
+                        email: firebaseProfile.email,
+                        displayName: firebaseProfile.name,
+                        emailVerified: firebaseProfile.is_verified,
+                    }, persistedProfile);
                     const tokens = generateAuthTokens(firebaseProfile);
                     return sendResponse(
                         res,
                         200,
-                        { user: firebaseProfile.toJSON(), ...tokens },
+                        { user: firestoreUser.toJSON(), ...tokens },
                         'Logged in with Firebase',
                     );
                 }
