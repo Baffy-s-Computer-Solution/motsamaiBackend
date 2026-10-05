@@ -5,6 +5,7 @@ yarn-error.log
 .gitignore
 .env
 .env.*
+firebase-service-account.json
 coverage
 tests
 docs

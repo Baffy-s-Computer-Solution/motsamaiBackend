@@ -235,6 +235,7 @@ temp/
 # FIREBASE
 # =========================
 .firebase/
+firebase-service-account.json
 
 # =========================
 # NETLIFY
