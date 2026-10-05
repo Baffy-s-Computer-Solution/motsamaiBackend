@@ -15,7 +15,11 @@ const register = {
 const login = {
     body: Joi.object().keys({
         email: Joi.string().required().email(),
-        password: Joi.string().required(),
+        password: Joi.string().when('idToken', {
+            is: Joi.string().min(1),
+            then: Joi.optional(),
+            otherwise: Joi.required(),
+        }),
         idToken: Joi.string().allow('', null),
     }),
 };

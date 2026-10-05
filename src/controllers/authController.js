@@ -351,14 +351,54 @@ exports.login = asyncHandler(async (req, res) => {
             return sendResponse(res, 200, { user: user.toJSON(), ...tokens }, 'Logged in with Firebase');
         }
 
-        if (!user) {
-            user = await resolveFirebaseLogin(normalizedEmail, idToken);
-            if (user) {
-                if (!user.is_active) throw new AuthenticationError('Account is disabled');
-                const tokens = generateAuthTokens(user);
-                return sendResponse(res, 200, { user: user.toJSON(), ...tokens }, 'Logged in with Firebase');
+        let firebaseAuthenticated = false;
+        if (idToken) {
+            const firebaseProfile = await resolveFirebaseLogin(normalizedEmail, idToken);
+            if (firebaseProfile) {
+                if (!user) {
+                    const tokens = generateAuthTokens(firebaseProfile);
+                    return sendResponse(
+                        res,
+                        200,
+                        { user: firebaseProfile.toJSON(), ...tokens },
+                        'Logged in with Firebase',
+                    );
+                }
+
+                if (user.firebase_uid && user.firebase_uid !== firebaseProfile.firebase_uid) {
+                    throw new AuthenticationError('Firebase account does not match this user');
+                }
+
+                user.firebase_uid = firebaseProfile.firebase_uid;
+                user.is_verified = true;
+                user.email_verified_at = firebaseProfile.email_verified_at || user.email_verified_at;
+                firebaseAuthenticated = true;
             }
+        }
+
+        if (!user) {
             user = await ensureAdminForLogin(normalizedEmail, password);
+        }
+
+        if (firebaseAuthenticated && user && !user.is_active) {
+            throw new AuthenticationError('Account is disabled');
+        }
+
+        if (firebaseAuthenticated && user) {
+            user.last_login_at = new Date();
+            await user.save();
+            await markDriverOnline(user);
+            await Promise.allSettled([
+                syncUserToFirestore(user),
+                syncFirebaseRoleClaims(user),
+            ]);
+            const tokens = generateAuthTokens(user);
+            return sendResponse(
+                res,
+                200,
+                { user: user.toJSON(), ...tokens },
+                'Logged in successfully',
+            );
         }
     }
 
