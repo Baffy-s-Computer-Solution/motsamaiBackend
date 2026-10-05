@@ -2,7 +2,7 @@ const http = require('http');
 const app = require('../app');
 const config = require('./config');
 const logger = require('./utils/logger');
-const { sequelize, User } = require('./models');
+const { sequelize } = require('./models');
 const { connectRedis, redisClient } = require('./config/redis');
 const { initializeSocket } = require('./realtime/socket');
 const { syncAllFirebaseUsersToFirestore } = require('./services/firestoreUserService');
@@ -37,65 +37,6 @@ const logEndpointCatalog = () => {
 
   logger.info('Backend endpoint catalog:');
   endpointGroups.forEach((endpoint) => logger.info(`  ${endpoint}`));
-};
-
-const ensureAdminUser = async () => {
-  const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-  const password = process.env.ADMIN_PASSWORD;
-
-  if (!email || !password) {
-    logger.warn('ADMIN_EMAIL or ADMIN_PASSWORD is missing; startup admin bootstrap skipped');
-    return;
-  }
-
-  const [firstName, ...lastNameParts] = (process.env.ADMIN_NAME || 'Motsamai Admin').trim().split(/\s+/);
-  const phone = process.env.ADMIN_PHONE || `+266${String(Date.now()).slice(-8)}`;
-  const existing = await User.findOne({ where: { email }, paranoid: false });
-
-  if (existing) {
-    if (existing.deletedAt && typeof existing.restore === 'function') {
-      await existing.restore();
-    }
-
-    await existing.update({
-      role: 'admin',
-      is_active: true,
-      is_verified: true,
-      password_hash: password,
-    });
-    logger.info({ email }, 'Admin user verified from environment');
-    return;
-  }
-
-  await User.create({
-    email,
-    phone,
-    first_name: firstName || 'Motsamai',
-    last_name: lastNameParts.join(' ') || 'Admin',
-    password_hash: password,
-    role: 'admin',
-    is_active: true,
-    is_verified: true,
-    email_verified_at: new Date(),
-  });
-
-  logger.info({ email }, 'Admin user created from environment');
-};
-
-const ensureCynthiaAdmin = async () => {
-  const email = (process.env.CYNTHIA_ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-  if (!email) {
-    logger.warn('CYNTHIA_ADMIN_EMAIL is missing; configured admin bootstrap skipped');
-    return;
-  }
-
-  const existing = await User.findOne({ where: { email }, paranoid: false });
-  if (!existing) {
-    logger.info({ email }, 'Configured admin will be claimed after verified Firebase login');
-    return;
-  }
-
-  logger.info({ email }, 'Configured admin role will be synchronized after verified Firebase login');
 };
 
 const ensureDatabaseSchema = async () => {
@@ -135,9 +76,6 @@ const startServer = async () => {
     }
 
     await ensureDatabaseSchema();
-    await ensureAdminUser();
-    await ensureCynthiaAdmin();
-
     try {
       const result = await syncAllFirebaseUsersToFirestore();
       if (result.synced) logger.info({ count: result.synced }, 'Firebase Auth users synchronized to Firestore');

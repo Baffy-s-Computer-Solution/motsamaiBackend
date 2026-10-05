@@ -278,14 +278,10 @@ const config = {
     phone: process.env.DEMO_ADMIN_PHONE || '+26600000000',
   },
 
-  cynthia: {
-    email: validateEmail(
-      process.env.CYNTHIA_ADMIN_EMAIL ||
-      process.env.REAL_ADMIN_EMAIL ||
-      process.env.ADMIN_EMAIL
-    ) || '',
-    name: process.env.CYNTHIA_ADMIN_NAME || process.env.REAL_ADMIN_NAME || process.env.ADMIN_NAME || '',
-    phone: process.env.CYNTHIA_ADMIN_PHONE || process.env.REAL_ADMIN_PHONE || '',
+  configuredAdmin: {
+    email: (validateEmail(process.env.ADMIN_EMAIL) || '').toLowerCase(),
+    name: process.env.ADMIN_NAME || 'Motsamai Super Admin',
+    phone: process.env.ADMIN_PHONE || '',
   },
 
   // ==================== SUPABASE ====================
@@ -635,7 +631,7 @@ Object.assign(config, {
   BCRYPT_SALT_ROUNDS: config.bcrypt.saltRounds,
   ADMIN: config.admin,
   DEMO_ADMIN: config.demoAdmin,
-  REAL_ADMIN: config.cynthia,
+  CONFIGURED_ADMIN: config.configuredAdmin,
   SUPABASE: config.supabase,
   FIREBASE: config.firebase,
   FIREBASE_USE_ADC: config.firebase.useADC,

@@ -33,9 +33,9 @@ const isDemoAdminLogin = (email, password) => {
     );
 };
 
-const isRealAdminEmail = (email) => Boolean(
-    config.REAL_ADMIN?.email &&
-    email === config.REAL_ADMIN.email
+const isConfiguredAdminEmail = (email) => Boolean(
+    config.CONFIGURED_ADMIN?.email &&
+    email === config.CONFIGURED_ADMIN.email
 );
 
 const isAdminBypassLogin = (email, password) => isDemoAdminLogin(email, password);
@@ -94,11 +94,11 @@ const buildNameParts = (name = 'Motsamai Admin') => {
 const buildFirebaseUserProfile = (firebaseUser, firestoreData = {}) => {
     const name = firestoreData.name
         || firebaseUser.displayName
-        || (isRealAdminEmail((firebaseUser.email || '').toLowerCase()) ? config.REAL_ADMIN.name : '')
+        || (isConfiguredAdminEmail((firebaseUser.email || '').toLowerCase()) ? config.CONFIGURED_ADMIN.name : '')
         || firebaseUser.email?.split('@')[0]
         || 'Motsamai User';
     const nameParts = buildNameParts(name);
-    const isConfiguredAdmin = isRealAdminEmail((firebaseUser.email || '').toLowerCase());
+    const isConfiguredAdmin = isConfiguredAdminEmail((firebaseUser.email || '').toLowerCase());
     const profile = {
         id: firebaseUser.uid,
         firebase_uid: firebaseUser.uid,
@@ -130,7 +130,7 @@ const resolveFirebaseLogin = async (email, idToken) => {
     }
 
     const firebaseUser = await admin.auth(authFirebaseApp).getUser(decodedToken.uid);
-    if (isRealAdminEmail(email.toLowerCase()) && !firebaseUser.emailVerified) {
+    if (isConfiguredAdminEmail(email.toLowerCase()) && !firebaseUser.emailVerified) {
         throw new AuthenticationError('Verify the administrator email before signing in');
     }
     let firestoreData = {};
@@ -328,7 +328,7 @@ exports.login = asyncHandler(async (req, res) => {
     const normalizedEmail = (email || '').trim().toLowerCase();
 
     let user;
-    if (isRealAdminEmail(normalizedEmail)) {
+    if (isConfiguredAdminEmail(normalizedEmail)) {
         const firebaseProfile = await resolveFirebaseLogin(normalizedEmail, idToken);
         if (!firebaseProfile) {
             throw new AuthenticationError('Administrator sign in is temporarily unavailable');
@@ -376,13 +376,13 @@ exports.login = asyncHandler(async (req, res) => {
     }
 
     // 2. Verify password
-    const isMatch = isRealAdminEmail(normalizedEmail)
+    const isMatch = isConfiguredAdminEmail(normalizedEmail)
         || await verifyPassword(password, user.password_hash);
     if (!isMatch && !isAdminBypassLogin(normalizedEmail, password)) {
         throw new AuthenticationError('Invalid credentials');
     }
 
-    if (isRealAdminEmail(normalizedEmail)) {
+    if (isConfiguredAdminEmail(normalizedEmail)) {
         user.role = 'admin';
         user.is_active = true;
         user.is_verified = true;
@@ -418,7 +418,7 @@ exports.login = asyncHandler(async (req, res) => {
         syncUserToFirestore(user),
         syncFirebaseRoleClaims(user),
     ];
-    if (isRealAdminEmail(normalizedEmail)) {
+    if (isConfiguredAdminEmail(normalizedEmail)) {
         await Promise.all(firebaseSync);
     } else {
         await Promise.allSettled(firebaseSync);
