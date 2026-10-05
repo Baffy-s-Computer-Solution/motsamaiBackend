@@ -12,9 +12,17 @@ const {
     authFirebaseApp,
     firestoreFirebaseApp,
     isAuthFirebaseEnabled,
+    isFirestoreFirebaseEnabled,
 } = require('../config/firebase');
-const { syncUserToFirestore, syncFirebaseRoleClaims } = require('../services/firestoreUserService');
+const {
+    syncUserToFirestore,
+    syncFirebaseRoleClaims,
+    getFirestoreUserByUid,
+    getFirestoreUserByEmail,
+    persistFirebaseUserProfile,
+} = require('../services/firestoreUserService');
 const { uploadRemoteImage } = require('../services/storageService');
+const isDatabaseUnavailable = require('../utils/isDatabaseUnavailable');
 
 const markDriverOnline = async (user) => {
     if (user?.role !== 'driver') return;
@@ -63,13 +71,13 @@ const buildUniquePhone = (seed = '') => {
 
 const generateAuthTokens = (user) => {
     const accessToken = jwt.sign(
-        { id: user.id, role: user.role, email: user.email },
+        { id: user.id, firebase_uid: user.firebase_uid || undefined, role: user.role, email: user.email },
         config.JWT.secret,
         { expiresIn: config.JWT.expiresIn || '24h' }
     );
 
     const refreshToken = jwt.sign(
-        { id: user.id, role: user.role, email: user.email, type: 'refresh' },
+        { id: user.id, firebase_uid: user.firebase_uid || undefined, role: user.role, email: user.email, type: 'refresh' },
         config.JWT.refreshSecret || config.JWT.secret,
         { expiresIn: config.JWT.refreshExpiresIn || config.JWT.refreshTokenExpiry || '30d' }
     );
@@ -108,17 +116,23 @@ const buildFirebaseUserProfile = (firebaseUser, firestoreData = {}) => {
         email: firebaseUser.email,
         phone: firestoreData.phone || null,
         role: isConfiguredAdmin ? 'admin' : (firestoreData.role || firebaseUser.customClaims?.role || 'rider'),
-        is_active: !firebaseUser.disabled && firestoreData.status !== 'disabled',
-        is_verified: true,
-        email_verified_at: firebaseUser.emailVerified ? new Date() : null,
+        is_active: !firebaseUser.disabled && firestoreData.is_active !== false && firestoreData.status !== 'disabled',
+        is_verified: Boolean(firebaseUser.emailVerified || firestoreData.is_verified),
+        email_verified_at: firestoreData.email_verified_at || (firebaseUser.emailVerified ? new Date() : null),
         avatar_url: firestoreData.avatar_url || firebaseUser.photoURL || null,
         password_hash: null,
     };
 
-    return {
-        ...profile,
-        toJSON: () => ({ ...profile }),
-    };
+    Object.defineProperty(profile, 'toJSON', {
+        value: () => {
+            const json = { ...profile };
+            delete json.password_hash;
+            delete json.firebase_uid;
+            return json;
+        },
+    });
+
+    return profile;
 };
 
 const resolveFirebaseLogin = async (email, idToken) => {
@@ -183,6 +197,82 @@ const persistConfiguredAdmin = async (firebaseProfile) => {
     return user;
 };
 
+const persistFirebaseProfile = async (profile) => {
+    const persisted = await persistFirebaseUserProfile(profile);
+    const claimResult = await Promise.allSettled([
+        syncFirebaseRoleClaims(persisted),
+    ]);
+    for (const result of claimResult) {
+        if (result.status === 'rejected') {
+            console.warn('Firebase role claim synchronization failed', result.reason?.message || result.reason);
+        }
+    }
+    return persisted;
+};
+
+const createFirestoreGoogleProfile = async (googleToken, requestedRole, displayName, photoURL) => {
+    const firebaseUser = await admin.auth(authFirebaseApp).getUser(googleToken.uid);
+    const email = String(firebaseUser.email || googleToken.email || '').trim().toLowerCase();
+    if (!email || (googleToken.email && email !== googleToken.email.trim().toLowerCase())) {
+        throw new AuthenticationError('Google account email could not be verified');
+    }
+
+    const [userByUid, userByEmail] = await Promise.all([
+        getFirestoreUserByUid(firebaseUser.uid),
+        getFirestoreUserByEmail(email),
+    ]);
+    if (userByEmail?.firebase_uid && userByEmail.firebase_uid !== firebaseUser.uid) {
+        throw new AuthenticationError('This email is already linked to a different Firebase account');
+    }
+
+    const firestoreData = userByUid || userByEmail || {};
+    const profile = buildFirebaseUserProfile(firebaseUser, firestoreData);
+    const resolvedName = displayName || firebaseUser.displayName || email.split('@')[0];
+    const [firstName, ...lastNameParts] = resolvedName.trim().split(/\s+/).filter(Boolean);
+    const persisted = await persistFirebaseProfile({
+        ...profile,
+        id: firebaseUser.uid,
+        firebase_uid: firebaseUser.uid,
+        email,
+        name: firestoreData.name || resolvedName,
+        first_name: firestoreData.first_name || firstName || 'Google',
+        last_name: firestoreData.last_name || lastNameParts.join(' ') || 'User',
+        phone: firestoreData.phone || buildUniqueOAuthPhone(firebaseUser.uid),
+        role: firestoreData.role || requestedRole,
+        avatar_url: firestoreData.avatar_url || photoURL || firebaseUser.photoURL || null,
+        profile_picture: firestoreData.profile_picture || photoURL || firebaseUser.photoURL || null,
+        is_active: profile.is_active,
+        is_verified: Boolean(firebaseUser.emailVerified),
+        email_verified_at: firebaseUser.emailVerified
+            ? (firestoreData.email_verified_at || new Date())
+            : null,
+        last_login_at: new Date(),
+    });
+
+    return buildFirebaseUserProfile(firebaseUser, {
+        ...firestoreData,
+        ...persisted,
+    });
+};
+
+const persistConfiguredAdminToFirestore = async (firebaseProfile) => {
+    const profile = await persistFirebaseProfile({
+        ...firebaseProfile,
+        role: 'admin',
+        is_active: true,
+        is_verified: true,
+        email_verified_at: firebaseProfile.email_verified_at || new Date(),
+        phone: firebaseProfile.phone || buildUniquePhone(firebaseProfile.firebase_uid),
+    });
+    return buildFirebaseUserProfile({
+        uid: profile.firebase_uid,
+        email: profile.email,
+        displayName: profile.name,
+        emailVerified: true,
+        disabled: false,
+    }, profile);
+};
+
 const createEmailVerificationToken = (user) => jwt.sign(
     { id: user.id, email: user.email, purpose: 'email-verification' },
     config.JWT.secret,
@@ -244,27 +334,83 @@ exports.register = asyncHandler(async (req, res) => {
     const [firstName, ...lastNameParts] = (name || '').trim().split(/\s+/).filter(Boolean);
     const assignedRole = role === 'driver' ? 'driver' : 'rider';
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ where: { email: normalizedEmail } });
-    if (existingUser) {
-        throw new BadRequestException('User with this email already exists');
-    }
-
     if (!firstName) {
         throw new BadRequestException('Please enter your name');
     }
 
-    const user = await User.create({
-        first_name: firstName,
-        last_name: lastNameParts.join(' ') || firstName,
-        email: normalizedEmail,
-        phone: resolvedPhone,
-        password_hash: password,
-        role: assignedRole,
-        firebase_uid: firebase_uid || null,
-        is_verified: false,
-        metadata: { emailVerificationIssuedAt: new Date().toISOString() },
-    });
+    let user;
+    try {
+        const existingUser = await User.findOne({ where: { email: normalizedEmail } });
+        if (existingUser) {
+            throw new BadRequestException('User with this email already exists');
+        }
+
+        user = await User.create({
+            first_name: firstName,
+            last_name: lastNameParts.join(' ') || firstName,
+            email: normalizedEmail,
+            phone: resolvedPhone,
+            password_hash: password,
+            role: assignedRole,
+            firebase_uid: firebase_uid || null,
+            is_verified: false,
+            metadata: { emailVerificationIssuedAt: new Date().toISOString() },
+        });
+    } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        if (!firebase_uid || !isAuthFirebaseEnabled || !authFirebaseApp) {
+            throw new AuthenticationError('Database is unavailable and Firebase account verification is not configured');
+        }
+
+        console.warn('Postgres unavailable during registration; persisting the Firebase profile to Firestore', error.message);
+        const firebaseUser = await admin.auth(authFirebaseApp).getUser(firebase_uid);
+        if (firebaseUser.email?.trim().toLowerCase() !== normalizedEmail) {
+            throw new AuthenticationError('Firebase account does not match the registration email');
+        }
+
+        const [existingByUid, existingByEmail] = await Promise.all([
+            getFirestoreUserByUid(firebase_uid),
+            getFirestoreUserByEmail(normalizedEmail),
+        ]);
+        if (existingByEmail?.firebase_uid && existingByEmail.firebase_uid !== firebase_uid) {
+            throw new BadRequestException('User with this email already exists');
+        }
+
+        const firestoreData = existingByUid || existingByEmail || {};
+        const profile = buildFirebaseUserProfile(firebaseUser, firestoreData);
+        const persisted = await persistFirebaseProfile({
+            ...profile,
+            id: firebase_uid,
+            firebase_uid,
+            email: normalizedEmail,
+            name: firestoreData.name || name.trim(),
+            first_name: firestoreData.first_name || firstName,
+            last_name: firestoreData.last_name || lastNameParts.join(' ') || firstName,
+            phone: firestoreData.phone || resolvedPhone,
+            role: firestoreData.role || assignedRole,
+            is_active: !firebaseUser.disabled,
+            is_verified: Boolean(firebaseUser.emailVerified),
+            email_verified_at: firebaseUser.emailVerified ? new Date() : null,
+            metadata: { ...(firestoreData.metadata || {}), authProvider: 'password' },
+        });
+
+        const frontendUrl = process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173';
+        let verificationUrl = null;
+        try {
+            verificationUrl = await admin.auth(authFirebaseApp).generateEmailVerificationLink(normalizedEmail, {
+                url: `${frontendUrl.replace(/\/$/, '')}/verify-email`,
+                handleCodeInApp: true,
+            });
+        } catch (linkError) {
+            console.warn('Firebase verification link generation failed during Firestore registration', linkError.message);
+        }
+
+        return sendResponse(res, 201, {
+            user: buildFirebaseUserProfile(firebaseUser, persisted).toJSON(),
+            verificationRequired: !firebaseUser.emailVerified,
+            verificationUrl,
+        }, 'Account created using Firebase and Firestore');
+    }
 
     // Exclude password from response
     const userData = user.toJSON();
@@ -331,14 +477,21 @@ exports.login = asyncHandler(async (req, res) => {
             throw new AuthenticationError('Administrator sign in is temporarily unavailable');
         }
 
-        user = await persistConfiguredAdmin(firebaseProfile);
+        try {
+            user = await persistConfiguredAdmin(firebaseProfile);
+        } catch (error) {
+            if (!isDatabaseUnavailable(error)) throw error;
+            console.warn('Postgres unavailable during administrator login; persisting the profile to Firestore', error.message);
+            user = await persistConfiguredAdminToFirestore(firebaseProfile);
+        }
     } else {
         let databaseAvailable = true;
         try {
             user = await User.findOne({ where: { email: normalizedEmail } });
         } catch (error) {
+            if (!isDatabaseUnavailable(error)) throw error;
             databaseAvailable = false;
-            console.warn('Postgres unavailable during login; checking Firebase Auth and Firestore', error.message);
+            console.warn('Postgres unavailable during login; authenticating with Firebase and Firestore', error.message);
         }
 
         if (!databaseAvailable) {
@@ -346,7 +499,13 @@ exports.login = asyncHandler(async (req, res) => {
             if (!user) throw new AuthenticationError('Sign in is temporarily unavailable');
 
             if (!user.is_active) throw new AuthenticationError('Account is disabled');
+            if (!user.is_verified) throw new AuthenticationError('Please verify your email before signing in');
 
+            user.last_login_at = new Date();
+            user = buildFirebaseUserProfile(
+                { uid: user.firebase_uid, email: user.email, displayName: user.name, emailVerified: user.is_verified },
+                await persistFirebaseProfile(user),
+            );
             const tokens = generateAuthTokens(user);
             return sendResponse(res, 200, { user: user.toJSON(), ...tokens }, 'Logged in with Firebase');
         }
@@ -535,7 +694,12 @@ exports.refreshToken = asyncHandler(async (req, res) => {
         audience: config.JWT.audience,
     });
     if (decoded.type !== 'refresh') throw new AuthenticationError('Invalid refresh token');
-    const newToken = jwt.sign({ id: decoded.id, role: decoded.role, email: decoded.email }, config.JWT.secret, {
+    const newToken = jwt.sign({
+        id: decoded.id,
+        firebase_uid: decoded.firebase_uid || undefined,
+        role: decoded.role,
+        email: decoded.email,
+    }, config.JWT.secret, {
         expiresIn: config.JWT.expiresIn || '24h',
         issuer: config.JWT.issuer,
         audience: config.JWT.audience,
@@ -600,11 +764,32 @@ exports.verifyEmail = asyncHandler(async (req, res) => {
             throw new BadRequestException('Email is not verified yet');
         }
 
-        const user = await User.findOne({ where: { email: email.trim().toLowerCase() } });
-        if (!user) throw new BadRequestException('Verification account not found');
-        user.is_verified = true;
-        user.email_verified_at = new Date();
-        await user.save();
+        let user;
+        try {
+            user = await User.findOne({ where: { email: email.trim().toLowerCase() } });
+            if (user) {
+                user.is_verified = true;
+                user.email_verified_at = new Date();
+                await user.save();
+            }
+        } catch (error) {
+            if (!isDatabaseUnavailable(error)) throw error;
+            console.warn('Postgres unavailable during email verification; updating the Firestore profile', error.message);
+        }
+
+        if (!user) {
+            const firestoreProfile = await getFirestoreUserByUid(firebaseUser.uid);
+            if (!firestoreProfile) throw new BadRequestException('Verification account not found');
+            await persistFirebaseProfile({
+                ...buildFirebaseUserProfile(firebaseUser, firestoreProfile),
+                ...firestoreProfile,
+                id: firebaseUser.uid,
+                firebase_uid: firebaseUser.uid,
+                is_verified: true,
+                email_verified_at: new Date(),
+            });
+        }
+
         return sendResponse(res, 200, { verified: true }, 'Email verified successfully');
     }
 
@@ -619,7 +804,32 @@ exports.verifyEmail = asyncHandler(async (req, res) => {
         throw new BadRequestException('Invalid verification token');
     }
 
-    const user = await User.findByPk(decoded.id);
+    let user;
+    try {
+        user = await User.findByPk(decoded.id);
+    } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        console.warn('Postgres unavailable during email verification; checking Firestore profile', error.message);
+    }
+
+    if (!user && isFirestoreFirebaseEnabled) {
+        const firestoreProfile = await getFirestoreUserByUid(decoded.firebase_uid || decoded.id);
+        if (firestoreProfile && firestoreProfile.email === decoded.email) {
+            const firebaseUser = await admin.auth(authFirebaseApp).getUser(
+                firestoreProfile.firebase_uid || decoded.firebase_uid || decoded.id,
+            );
+            const persisted = await persistFirebaseProfile({
+                ...buildFirebaseUserProfile(firebaseUser, firestoreProfile),
+                ...firestoreProfile,
+                id: firebaseUser.uid,
+                firebase_uid: firebaseUser.uid,
+                is_verified: true,
+                email_verified_at: new Date(),
+            });
+            return sendResponse(res, 200, { verified: true, user: persisted }, 'Email verified successfully');
+        }
+    }
+
     if (!user || user.email !== decoded.email) {
         throw new BadRequestException('Verification account not found');
     }
@@ -704,58 +914,62 @@ exports.googleSignIn = asyncHandler(async (req, res) => {
         }
     }
 
-    // Check if user exists
-    let user = await User.findOne({ where: { email: normalizedEmail } });
+    let user;
+    try {
+        user = await User.findOne({ where: { email: normalizedEmail } });
 
-    if (user) {
-        // Existing user - log in
-        // Update last login timestamp
-        user.last_login_at = new Date();
-        
-        // Optionally update profile info if provided
-        if (displayName && !user.first_name) {
-            if (firstName) {
+        if (user) {
+            user.last_login_at = new Date();
+
+            if (displayName && !user.first_name && firstName) {
                 user.first_name = firstName;
                 user.last_name = lastNameParts.join(' ') || 'User';
             }
-        }
-        
-        if (storedPhotoURL && (!user.profile_picture || user.profile_picture.includes('googleusercontent.com'))) {
-            user.profile_picture = storedPhotoURL;
-        }
 
-        user.firebase_uid = user.firebase_uid || googleToken.uid;
-        user.is_verified = true;
-        user.email_verified_at = user.email_verified_at || new Date();
-        user.metadata = {
-            ...(user.metadata || {}),
-            authProvider: 'google',
-            googlePhotoURL: storedPhotoURL || user.metadata?.googlePhotoURL,
-        };
+            if (storedPhotoURL && (!user.profile_picture || user.profile_picture.includes('googleusercontent.com'))) {
+                user.profile_picture = storedPhotoURL;
+            }
 
-        await user.save();
-    } else {
-        // New user - create account
-        // Extract phone from email if possible, or generate a placeholder
-        const phone = buildUniqueOAuthPhone(googleToken.uid);
-
-        user = await User.create({
-            first_name: firstName || 'Google',
-            last_name: lastNameParts.join(' ') || 'User',
-            email: normalizedEmail,
-            phone,
-            password_hash: `GoogleAuth-${googleToken.uid}-${Date.now()}`,
-            role: requestedRole,
-            profile_picture: storedPhotoURL,
-            firebase_uid: googleToken.uid,
-            is_verified: true,
-            email_verified_at: new Date(),
-            last_login_at: new Date(),
-            metadata: {
+            user.firebase_uid = user.firebase_uid || googleToken.uid;
+            user.is_verified = true;
+            user.email_verified_at = user.email_verified_at || new Date();
+            user.metadata = {
+                ...(user.metadata || {}),
                 authProvider: 'google',
-                googlePhotoURL: storedPhotoURL,
-            },
-        });
+                googlePhotoURL: storedPhotoURL || user.metadata?.googlePhotoURL,
+            };
+
+            await user.save();
+        } else {
+            user = await User.create({
+                first_name: firstName || 'Google',
+                last_name: lastNameParts.join(' ') || 'User',
+                email: normalizedEmail,
+                phone: buildUniqueOAuthPhone(googleToken.uid),
+                password_hash: `GoogleAuth-${googleToken.uid}-${Date.now()}`,
+                role: requestedRole,
+                profile_picture: storedPhotoURL,
+                firebase_uid: googleToken.uid,
+                is_verified: true,
+                email_verified_at: new Date(),
+                last_login_at: new Date(),
+                metadata: {
+                    authProvider: 'google',
+                    googlePhotoURL: storedPhotoURL,
+                },
+            });
+        }
+    } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        console.warn('Postgres unavailable during Google sign-in; persisting the profile to Firestore', error.message);
+        user = await createFirestoreGoogleProfile(googleToken, requestedRole, resolvedName, storedPhotoURL);
+        const tokens = generateAuthTokens(user);
+        return sendResponse(
+            res,
+            200,
+            { user: user.toJSON(), ...tokens },
+            'Google sign-in successful using Firebase and Firestore',
+        );
     }
 
     await markDriverOnline(user);

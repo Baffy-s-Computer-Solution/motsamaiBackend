@@ -17,7 +17,8 @@ const normalizeRole = (role) => (
 
 const toIso = (value) => {
   if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
+  const resolvedValue = typeof value.toDate === 'function' ? value.toDate() : value;
+  const date = resolvedValue instanceof Date ? resolvedValue : new Date(resolvedValue);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
@@ -25,11 +26,18 @@ const buildUserDocument = (user) => ({
   user_id: String(user.id || user.firebase_uid),
   firebase_uid: user.firebase_uid || null,
   name: user.name || [user.first_name, user.last_name].filter(Boolean).join(' ') || null,
+  first_name: user.first_name || null,
+  last_name: user.last_name || null,
   email: user.email || null,
   role: normalizeRole(user.role),
-  status: user.status || (user.disabled ? 'disabled' : 'active'),
+  status: user.status || (user.is_active === false || user.disabled ? 'disabled' : 'active'),
+  is_active: user.is_active !== false && !user.disabled,
+  is_verified: Boolean(user.is_verified || user.email_verified_at),
+  email_verified_at: toIso(user.email_verified_at),
   phone: user.phone || null,
   avatar_url: user.avatar_url || user.profile_picture || user.photoURL || null,
+  profile_picture: user.profile_picture || user.avatar_url || user.photoURL || null,
+  metadata: user.metadata || {},
   last_login: toIso(user.last_login || user.last_login_at),
   updated_at: admin.firestore.FieldValue.serverTimestamp(),
 });
@@ -46,6 +54,14 @@ const buildRoleMembershipDocument = (user) => ({
 const syncUserToFirestore = async (user) => {
   if (!isFirestoreUserSyncEnabled || !isFirestoreFirebaseEnabled || !firestoreFirebaseApp || !user) return;
 
+  await writeUserDocuments(user);
+};
+
+const writeUserDocuments = async (user) => {
+  if (!isFirestoreFirebaseEnabled || !firestoreFirebaseApp) {
+    throw new Error('Firestore user storage is unavailable');
+  }
+
   const db = admin.firestore(firestoreFirebaseApp);
   const userDocId = user.firebase_uid || String(user.id);
   const userDoc = db.collection(USERS_COLLECTION).doc(userDocId);
@@ -61,6 +77,53 @@ const syncUserToFirestore = async (user) => {
     roleDoc.set(buildRoleMembershipDocument(user), { merge: true }),
     membershipDoc.set(buildRoleMembershipDocument(user), { merge: true }),
   ]);
+};
+
+const getFirestoreUserByUid = async (uid) => {
+  if (!uid) return null;
+  if (!isFirestoreFirebaseEnabled || !firestoreFirebaseApp) {
+    throw new Error('Firestore user storage is unavailable');
+  }
+
+  const snapshot = await admin.firestore(firestoreFirebaseApp)
+    .collection(USERS_COLLECTION)
+    .doc(String(uid))
+    .get();
+  return snapshot.exists ? { ...snapshot.data(), firebase_uid: snapshot.data().firebase_uid || String(uid) } : null;
+};
+
+const getFirestoreUserByEmail = async (email) => {
+  if (!email) return null;
+  if (!isFirestoreFirebaseEnabled || !firestoreFirebaseApp) {
+    throw new Error('Firestore user storage is unavailable');
+  }
+
+  const snapshot = await admin.firestore(firestoreFirebaseApp)
+    .collection(USERS_COLLECTION)
+    .where('email', '==', String(email).trim().toLowerCase())
+    .limit(1)
+    .get();
+  if (snapshot.empty) return null;
+  const document = snapshot.docs[0];
+  return { ...document.data(), firebase_uid: document.data().firebase_uid || document.id };
+};
+
+const persistFirebaseUserProfile = async (user) => {
+  if (!user?.firebase_uid && !user?.id) {
+    throw new Error('A Firebase UID is required to persist a Firestore user profile');
+  }
+
+  const firebaseUid = String(user.firebase_uid || user.id);
+  const profile = {
+    ...user,
+    id: firebaseUid,
+    firebase_uid: firebaseUid,
+    email: String(user.email || '').trim().toLowerCase(),
+    role: normalizeRole(user.role),
+  };
+
+  await writeUserDocuments(profile);
+  return profile;
 };
 
 const syncAllFirebaseUsersToFirestore = async () => {
@@ -100,6 +163,9 @@ const syncFirebaseRoleClaims = async (user) => {
 
 module.exports = {
   syncUserToFirestore,
+  getFirestoreUserByUid,
+  getFirestoreUserByEmail,
+  persistFirebaseUserProfile,
   syncAllFirebaseUsersToFirestore,
   syncFirebaseRoleClaims,
   USERS_COLLECTION,

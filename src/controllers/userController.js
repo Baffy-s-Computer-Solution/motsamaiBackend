@@ -34,6 +34,7 @@ const { validateEmail, validatePhoneNumber, validatePassword } = require('../uti
 const { CACHE_KEYS, CACHE_DURATIONS } = require('../utils/cacheKeys');
 const { USER_ROLES, USER_STATUS } = require('../constants/roles');
 const { metrics } = require('../utils/metrics');
+const { getFirestoreUserByUid } = require('../services/firestoreUserService');
 
 /**
  * User Controller Class - Comprehensive user management
@@ -100,11 +101,29 @@ class UserController {
               attributes: { exclude: ['password_hash', 'firebase_uid'] }
             });
           } catch (fallbackError) {
-            logger.warn('getProfile: user lookup unavailable, returning authenticated session profile', { error: fallbackError.message });
-            user = {
+            logger.warn('getProfile: Postgres profile lookup failed; checking Firestore', { error: fallbackError.message });
+            try {
+              const firestoreUser = await getFirestoreUserByUid(req.user.firebase_uid || req.user.id);
+              if (firestoreUser) {
+                user = {
+                  ...firestoreUser,
+                  id: firestoreUser.user_id || req.user.id,
+                  firebase_uid: firestoreUser.firebase_uid || req.user.firebase_uid,
+                };
+              }
+            } catch (firestoreError) {
+              logger.warn('getProfile: Firestore lookup failed; using authenticated session profile', { error: firestoreError.message });
+            }
+            user = user || {
               id: req.user.id,
+              firebase_uid: req.user.firebase_uid,
               email: req.user.email,
               role: req.user.role || 'rider',
+              first_name: req.user.first_name,
+              last_name: req.user.last_name,
+              name: req.user.name,
+              phone: req.user.phone,
+              avatar_url: req.user.avatar_url,
               is_active: req.user.is_active !== false,
               is_verified: req.user.is_verified !== false,
             };

@@ -1,0 +1,180 @@
+const mockUserFindOne = jest.fn();
+const mockUserCreate = jest.fn();
+const mockDriverUpdate = jest.fn();
+const mockVerifyIdToken = jest.fn();
+const mockGetFirebaseUser = jest.fn();
+const mockGetFirestoreUserByUid = jest.fn();
+const mockGetFirestoreUserByEmail = jest.fn();
+const mockPersistFirebaseUserProfile = jest.fn();
+const mockSyncFirebaseRoleClaims = jest.fn();
+const mockSyncUserToFirestore = jest.fn();
+const mockEmailVerificationLink = jest.fn();
+const mockFirestoreUserData = jest.fn();
+const mockUploadRemoteImage = jest.fn();
+const mockFirebaseAuth = {
+  verifyIdToken: mockVerifyIdToken,
+  getUser: mockGetFirebaseUser,
+  generateEmailVerificationLink: mockEmailVerificationLink,
+};
+const mockFirestore = {
+  collection: jest.fn(() => ({
+    doc: jest.fn(() => ({
+      get: jest.fn(async () => ({
+        exists: Boolean(mockFirestoreUserData()),
+        data: () => mockFirestoreUserData(),
+      })),
+    })),
+  })),
+};
+
+jest.mock('../../src/config', () => ({
+  JWT: { secret: 'test-jwt-secret', refreshSecret: 'test-refresh-secret', expiresIn: '1h' },
+  CONFIGURED_ADMIN: { email: 'admin@example.com', name: 'Motsamai Admin' },
+  DEMO_ADMIN: {},
+}));
+
+jest.mock('../../src/models', () => ({
+  User: { findOne: mockUserFindOne, create: mockUserCreate },
+  Driver: { update: mockDriverUpdate },
+}));
+
+jest.mock('../../src/config/firebase', () => ({
+  admin: {
+    auth: jest.fn(() => mockFirebaseAuth),
+    firestore: jest.fn(() => mockFirestore),
+  },
+  authFirebaseApp: {},
+  firestoreFirebaseApp: {},
+  isAuthFirebaseEnabled: true,
+  isFirestoreFirebaseEnabled: true,
+}));
+
+jest.mock('../../src/services/firestoreUserService', () => ({
+  syncUserToFirestore: mockSyncUserToFirestore,
+  syncFirebaseRoleClaims: mockSyncFirebaseRoleClaims,
+  getFirestoreUserByUid: mockGetFirestoreUserByUid,
+  getFirestoreUserByEmail: mockGetFirestoreUserByEmail,
+  persistFirebaseUserProfile: mockPersistFirebaseUserProfile,
+}));
+
+jest.mock('../../src/adapters/email.adapter', () => ({ send: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../src/services/storageService', () => ({ uploadRemoteImage: mockUploadRemoteImage }));
+
+const authController = require('../../src/controllers/authController');
+
+const callHandler = (handler, req) => new Promise((resolve, reject) => {
+  const res = {
+    status: jest.fn(function setStatus(status) {
+      this.statusCode = status;
+      return this;
+    }),
+    json: jest.fn((body) => resolve({ status: res.statusCode, body })),
+  };
+  handler(req, res, reject);
+});
+
+describe('Firebase authentication when Postgres is unavailable', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUserFindOne.mockRejectedValue({ name: 'SequelizeConnectionRefusedError' });
+    mockPersistFirebaseUserProfile.mockImplementation(async (profile) => profile);
+    mockSyncFirebaseRoleClaims.mockResolvedValue(undefined);
+    mockSyncUserToFirestore.mockResolvedValue(undefined);
+    mockGetFirestoreUserByUid.mockResolvedValue(null);
+    mockGetFirestoreUserByEmail.mockResolvedValue(null);
+    mockFirestoreUserData.mockReturnValue({
+      user_id: 'firebase-rider-uid',
+      firebase_uid: 'firebase-rider-uid',
+      email: 'rider@example.com',
+      name: 'Rider User',
+      role: 'rider',
+      status: 'active',
+      is_active: true,
+      is_verified: true,
+    });
+    mockVerifyIdToken.mockResolvedValue({ uid: 'firebase-rider-uid', email: 'rider@example.com' });
+    mockGetFirebaseUser.mockResolvedValue({
+      uid: 'firebase-rider-uid',
+      email: 'rider@example.com',
+      displayName: 'Rider User',
+      emailVerified: true,
+      disabled: false,
+      customClaims: {},
+    });
+    mockEmailVerificationLink.mockResolvedValue('https://motsamai.web.app/verify-email');
+    mockUploadRemoteImage.mockResolvedValue(null);
+  });
+
+  it('authenticates an email Firebase user and stores the profile in Firestore', async () => {
+    const response = await callHandler(authController.login, {
+      body: { email: 'rider@example.com', idToken: 'firebase-id-token' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.user).toEqual(expect.objectContaining({
+      id: 'firebase-rider-uid',
+      email: 'rider@example.com',
+      role: 'rider',
+    }));
+    expect(response.body.data.accessToken).toEqual(expect.any(String));
+    expect(mockPersistFirebaseUserProfile).toHaveBeenCalledWith(expect.objectContaining({
+      firebase_uid: 'firebase-rider-uid',
+      role: 'rider',
+      is_verified: true,
+    }));
+  });
+
+  it('creates a rider profile in Firestore when PostgreSQL registration lookup fails', async () => {
+    mockGetFirebaseUser.mockResolvedValueOnce({
+      uid: 'firebase-rider-uid',
+      email: 'rider@example.com',
+      displayName: 'Rider User',
+      emailVerified: false,
+      disabled: false,
+      customClaims: {},
+    });
+    const response = await callHandler(authController.register, {
+      body: {
+        email: 'rider@example.com',
+        password: 'not-persisted-in-firestore',
+        name: 'Rider User',
+        role: 'rider',
+        firebase_uid: 'firebase-rider-uid',
+      },
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data).toEqual(expect.objectContaining({
+      verificationRequired: true,
+      user: expect.objectContaining({ id: 'firebase-rider-uid', role: 'rider' }),
+    }));
+    const persistedProfile = mockPersistFirebaseUserProfile.mock.calls[0][0];
+    expect(persistedProfile).not.toHaveProperty('password');
+    expect(persistedProfile.password_hash).toBeNull();
+    expect(mockUserCreate).not.toHaveBeenCalled();
+  });
+
+  it('authenticates a Google user and creates their Firestore profile without Postgres', async () => {
+    mockFirestoreUserData.mockReturnValue(null);
+    const response = await callHandler(authController.googleSignIn, {
+      body: {
+        email: 'rider@example.com',
+        displayName: 'Rider User',
+        role: 'rider',
+      },
+      googleToken: { uid: 'firebase-rider-uid', email: 'rider@example.com' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.user).toEqual(expect.objectContaining({
+      id: 'firebase-rider-uid',
+      email: 'rider@example.com',
+      role: 'rider',
+    }));
+    expect(response.body.data.accessToken).toEqual(expect.any(String));
+    expect(mockPersistFirebaseUserProfile).toHaveBeenCalledWith(expect.objectContaining({
+      firebase_uid: 'firebase-rider-uid',
+      role: 'rider',
+    }));
+  });
+});
