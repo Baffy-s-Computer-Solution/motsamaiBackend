@@ -19,4 +19,18 @@ describe('Auth routes', () => {
     expect(response.status).toBe(401);
     expect(response.body).toEqual(expect.objectContaining({ success: false }));
   });
+
+  it('does not allow public registration to assign the admin role', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send({
+        email: 'new-user@example.com',
+        password: 'password123',
+        name: 'New User',
+        role: 'admin',
+        acceptedTerms: true,
+      });
+
+    expect(response.status).toBe(400);
+  });
 });

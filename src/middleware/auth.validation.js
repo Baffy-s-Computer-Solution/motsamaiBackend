@@ -7,7 +7,7 @@ const register = {
         name: Joi.string().required(),
         phone: Joi.string().allow('', null),
         firebase_uid: Joi.string().allow('', null),
-        role: Joi.string().valid('rider', 'driver', 'admin').default('rider'),
+        role: Joi.string().valid('rider', 'driver').default('rider'),
         acceptedTerms: Joi.boolean().valid(true).required(),
     }),
 };

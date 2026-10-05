@@ -83,28 +83,19 @@ const ensureAdminUser = async () => {
 };
 
 const ensureCynthiaAdmin = async () => {
-  const email = (process.env.CYNTHIA_ADMIN_EMAIL || '').trim().toLowerCase();
+  const email = (process.env.CYNTHIA_ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   if (!email) {
-    logger.warn('CYNTHIA_ADMIN_EMAIL is missing; Cynthia admin bootstrap skipped');
+    logger.warn('CYNTHIA_ADMIN_EMAIL is missing; configured admin bootstrap skipped');
     return;
   }
 
   const existing = await User.findOne({ where: { email }, paranoid: false });
   if (!existing) {
-    logger.info({ email }, 'Cynthia admin will be initialized on first login');
+    logger.info({ email }, 'Configured admin will be claimed after verified Firebase login');
     return;
   }
 
-  if (existing.deletedAt && typeof existing.restore === 'function') {
-    await existing.restore();
-  }
-
-  await existing.update({
-    role: 'admin',
-    is_active: true,
-    is_verified: true,
-  });
-  logger.info({ email }, 'Cynthia admin verified from environment');
+  logger.info({ email }, 'Configured admin role will be synchronized after verified Firebase login');
 };
 
 const ensureDatabaseSchema = async () => {

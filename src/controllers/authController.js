@@ -1,5 +1,6 @@
 ﻿﻿const { User, Driver } = require('../models');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const config = require('../config');
 const bcrypt = require('bcryptjs');
 const asyncHandler = require('../utils/asyncHandler');
@@ -91,8 +92,13 @@ const buildNameParts = (name = 'Motsamai Admin') => {
 };
 
 const buildFirebaseUserProfile = (firebaseUser, firestoreData = {}) => {
-    const name = firestoreData.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Motsamai User';
+    const name = firestoreData.name
+        || firebaseUser.displayName
+        || (isRealAdminEmail((firebaseUser.email || '').toLowerCase()) ? config.REAL_ADMIN.name : '')
+        || firebaseUser.email?.split('@')[0]
+        || 'Motsamai User';
     const nameParts = buildNameParts(name);
+    const isConfiguredAdmin = isRealAdminEmail((firebaseUser.email || '').toLowerCase());
     const profile = {
         id: firebaseUser.uid,
         firebase_uid: firebaseUser.uid,
@@ -101,7 +107,7 @@ const buildFirebaseUserProfile = (firebaseUser, firestoreData = {}) => {
         name,
         email: firebaseUser.email,
         phone: firestoreData.phone || null,
-        role: firestoreData.role || firebaseUser.customClaims?.role || 'rider',
+        role: isConfiguredAdmin ? 'admin' : (firestoreData.role || firebaseUser.customClaims?.role || 'rider'),
         is_active: !firebaseUser.disabled && firestoreData.status !== 'disabled',
         is_verified: true,
         email_verified_at: firebaseUser.emailVerified ? new Date() : null,
@@ -124,6 +130,9 @@ const resolveFirebaseLogin = async (email, idToken) => {
     }
 
     const firebaseUser = await admin.auth(authFirebaseApp).getUser(decodedToken.uid);
+    if (isRealAdminEmail(email.toLowerCase()) && !firebaseUser.emailVerified) {
+        throw new AuthenticationError('Verify the administrator email before signing in');
+    }
     let firestoreData = {};
 
     try {
@@ -137,6 +146,46 @@ const resolveFirebaseLogin = async (email, idToken) => {
     return buildFirebaseUserProfile(firebaseUser, firestoreData);
 };
 
+const persistConfiguredAdmin = async (firebaseProfile) => {
+    const email = (firebaseProfile.email || '').trim().toLowerCase();
+    let user = await User.findOne({
+        where: { email },
+        paranoid: false,
+    });
+
+    if (user?.firebase_uid && user.firebase_uid !== firebaseProfile.firebase_uid) {
+        throw new AuthenticationError('Administrator account is linked to a different Firebase user');
+    }
+
+    if (user?.deletedAt && typeof user.restore === 'function') {
+        await user.restore();
+    }
+
+    const adminFields = {
+        first_name: firebaseProfile.first_name,
+        last_name: firebaseProfile.last_name,
+        phone: firebaseProfile.phone || buildUniquePhone(firebaseProfile.firebase_uid),
+        role: 'admin',
+        is_active: true,
+        is_verified: true,
+        email_verified_at: firebaseProfile.email_verified_at || new Date(),
+        firebase_uid: firebaseProfile.firebase_uid,
+    };
+
+    if (!user) {
+        user = await User.create({
+            ...adminFields,
+            email,
+            password_hash: crypto.randomBytes(48).toString('hex'),
+        });
+    } else {
+        user.set(adminFields);
+        await user.save({ paranoid: false });
+    }
+
+    return user;
+};
+
 const createEmailVerificationToken = (user) => jwt.sign(
     { id: user.id, email: user.email, purpose: 'email-verification' },
     config.JWT.secret,
@@ -145,11 +194,10 @@ const createEmailVerificationToken = (user) => jwt.sign(
 
 const ensureAdminForLogin = async (email, password) => {
     const isDemoAdmin = isDemoAdminLogin(email, password);
-    const isRealAdmin = isRealAdminEmail(email);
 
-    if (!isDemoAdmin && !isRealAdmin) return null;
+    if (!isDemoAdmin) return null;
 
-    const adminProfile = isRealAdmin ? config.REAL_ADMIN : config.DEMO_ADMIN;
+    const adminProfile = config.DEMO_ADMIN;
     const nameParts = buildNameParts(adminProfile.name);
 
     const adminDefaults = {
@@ -169,25 +217,7 @@ const ensureAdminForLogin = async (email, password) => {
     });
 
     if (!existingAdmin) {
-        return User.create({
-            ...adminDefaults,
-            metadata: { cynthiaPasswordInitialized: isRealAdmin },
-        });
-    }
-
-    if (isRealAdmin) {
-        const currentPasswordWorks = await verifyPassword(password, existingAdmin.password_hash);
-        const canInitializePassword = !existingAdmin.metadata?.cynthiaPasswordInitialized;
-        if (!currentPasswordWorks && !canInitializePassword) return null;
-
-        if (!currentPasswordWorks && canInitializePassword) {
-            existingAdmin.password_hash = password;
-            existingAdmin.metadata = {
-                ...(existingAdmin.metadata || {}),
-                cynthiaPasswordInitialized: true,
-                cynthiaPasswordInitializedAt: new Date().toISOString(),
-            };
-        }
+        return User.create(adminDefaults);
     }
 
     existingAdmin.set({
@@ -215,6 +245,7 @@ exports.register = asyncHandler(async (req, res) => {
     const normalizedEmail = (email || '').trim().toLowerCase();
     const resolvedPhone = phone || buildUniquePhone(normalizedEmail);
     const [firstName, ...lastNameParts] = (name || '').trim().split(/\s+/).filter(Boolean);
+    const assignedRole = role === 'driver' ? 'driver' : 'rider';
 
     // Check if user already exists
     const existingUser = await User.findOne({ where: { email: normalizedEmail } });
@@ -232,7 +263,7 @@ exports.register = asyncHandler(async (req, res) => {
         email: normalizedEmail,
         phone: resolvedPhone,
         password_hash: password,
-        role: role || 'rider',
+        role: assignedRole,
         firebase_uid: firebase_uid || null,
         is_verified: false,
         metadata: { emailVerificationIssuedAt: new Date().toISOString() },
@@ -296,34 +327,42 @@ exports.login = asyncHandler(async (req, res) => {
     const { email, password, idToken } = req.body;
     const normalizedEmail = (email || '').trim().toLowerCase();
 
-    // 1. Check if user exists
     let user;
-    let databaseAvailable = true;
-    try {
-        user = await User.findOne({ where: { email: normalizedEmail } });
-    } catch (error) {
-        databaseAvailable = false;
-        console.warn('Postgres unavailable during login; checking Firebase Auth and Firestore', error.message);
-    }
+    if (isRealAdminEmail(normalizedEmail)) {
+        const firebaseProfile = await resolveFirebaseLogin(normalizedEmail, idToken);
+        if (!firebaseProfile) {
+            throw new AuthenticationError('Administrator sign in is temporarily unavailable');
+        }
 
-    if (!databaseAvailable) {
-        user = await resolveFirebaseLogin(normalizedEmail, idToken);
-        if (!user) throw new AuthenticationError('Sign in is temporarily unavailable');
+        user = await persistConfiguredAdmin(firebaseProfile);
+    } else {
+        let databaseAvailable = true;
+        try {
+            user = await User.findOne({ where: { email: normalizedEmail } });
+        } catch (error) {
+            databaseAvailable = false;
+            console.warn('Postgres unavailable during login; checking Firebase Auth and Firestore', error.message);
+        }
 
-        if (!user.is_active) throw new AuthenticationError('Account is disabled');
+        if (!databaseAvailable) {
+            user = await resolveFirebaseLogin(normalizedEmail, idToken);
+            if (!user) throw new AuthenticationError('Sign in is temporarily unavailable');
 
-        const tokens = generateAuthTokens(user);
-        return sendResponse(res, 200, { user: user.toJSON(), ...tokens }, 'Logged in with Firebase');
-    }
-
-    if (!user) {
-        user = await resolveFirebaseLogin(normalizedEmail, idToken);
-        if (user) {
             if (!user.is_active) throw new AuthenticationError('Account is disabled');
+
             const tokens = generateAuthTokens(user);
             return sendResponse(res, 200, { user: user.toJSON(), ...tokens }, 'Logged in with Firebase');
         }
-        user = await ensureAdminForLogin(normalizedEmail, password);
+
+        if (!user) {
+            user = await resolveFirebaseLogin(normalizedEmail, idToken);
+            if (user) {
+                if (!user.is_active) throw new AuthenticationError('Account is disabled');
+                const tokens = generateAuthTokens(user);
+                return sendResponse(res, 200, { user: user.toJSON(), ...tokens }, 'Logged in with Firebase');
+            }
+            user = await ensureAdminForLogin(normalizedEmail, password);
+        }
     }
 
     if (!user) {
@@ -337,7 +376,8 @@ exports.login = asyncHandler(async (req, res) => {
     }
 
     // 2. Verify password
-    const isMatch = await verifyPassword(password, user.password_hash);
+    const isMatch = isRealAdminEmail(normalizedEmail)
+        || await verifyPassword(password, user.password_hash);
     if (!isMatch && !isAdminBypassLogin(normalizedEmail, password)) {
         throw new AuthenticationError('Invalid credentials');
     }
@@ -374,10 +414,15 @@ exports.login = asyncHandler(async (req, res) => {
     await user.save();
     await markDriverOnline(user);
 
-    await Promise.allSettled([
+    const firebaseSync = [
         syncUserToFirestore(user),
         syncFirebaseRoleClaims(user),
-    ]);
+    ];
+    if (isRealAdminEmail(normalizedEmail)) {
+        await Promise.all(firebaseSync);
+    } else {
+        await Promise.allSettled(firebaseSync);
+    }
 
     const tokens = generateAuthTokens(user);
 

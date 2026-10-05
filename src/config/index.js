@@ -279,8 +279,12 @@ const config = {
   },
 
   cynthia: {
-    email: validateEmail(process.env.CYNTHIA_ADMIN_EMAIL || process.env.VITE_CYNTHIA_ADMIN_EMAIL || process.env.REAL_ADMIN_EMAIL) || '',
-    name: process.env.CYNTHIA_ADMIN_NAME || process.env.REAL_ADMIN_NAME || '',
+    email: validateEmail(
+      process.env.CYNTHIA_ADMIN_EMAIL ||
+      process.env.REAL_ADMIN_EMAIL ||
+      process.env.ADMIN_EMAIL
+    ) || '',
+    name: process.env.CYNTHIA_ADMIN_NAME || process.env.REAL_ADMIN_NAME || process.env.ADMIN_NAME || '',
     phone: process.env.CYNTHIA_ADMIN_PHONE || process.env.REAL_ADMIN_PHONE || '',
   },
 
