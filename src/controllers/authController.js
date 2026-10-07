@@ -117,8 +117,10 @@ const buildFirebaseUserProfile = (firebaseUser, firestoreData = {}) => {
         phone: firestoreData.phone || null,
         role: isConfiguredAdmin ? 'admin' : (firestoreData.role || firebaseUser.customClaims?.role || 'rider'),
         is_active: !firebaseUser.disabled && firestoreData.is_active !== false && firestoreData.status !== 'disabled',
-        is_verified: Boolean(firebaseUser.emailVerified || firestoreData.is_verified),
-        email_verified_at: firestoreData.email_verified_at || (firebaseUser.emailVerified ? new Date() : null),
+        is_verified: Boolean(firebaseUser.emailVerified),
+        email_verified_at: firebaseUser.emailVerified
+            ? (firestoreData.email_verified_at || new Date())
+            : null,
         avatar_url: firestoreData.avatar_url || firebaseUser.photoURL || null,
         password_hash: null,
     };
@@ -437,21 +439,10 @@ exports.register = asyncHandler(async (req, res) => {
             metadata: { ...(firestoreData.metadata || {}), authProvider: 'password' },
         });
 
-        const frontendUrl = process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173';
-        let verificationUrl = null;
-        try {
-            verificationUrl = await admin.auth(authFirebaseApp).generateEmailVerificationLink(normalizedEmail, {
-                url: `${frontendUrl.replace(/\/$/, '')}/verify-email`,
-                handleCodeInApp: true,
-            });
-        } catch (linkError) {
-            console.warn('Firebase verification link generation failed during Firestore registration', linkError.message);
-        }
-
         return sendResponse(res, 201, {
             user: buildFirebaseUserProfile(firebaseUser, persisted).toJSON(),
             verificationRequired: !firebaseUser.emailVerified,
-            verificationUrl,
+            verificationUrl: null,
         }, 'Account created using Firebase and Firestore');
     }
 
@@ -462,7 +453,7 @@ exports.register = asyncHandler(async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173';
     let verificationUrl;
 
-    if (isAuthFirebaseEnabled && authFirebaseApp) {
+    if (!firebase_uid && isAuthFirebaseEnabled && authFirebaseApp) {
         try {
             verificationUrl = await admin.auth(authFirebaseApp).generateEmailVerificationLink(user.email, {
                 url: `${frontendUrl.replace(/\/$/, '')}/verify-email`,
@@ -476,23 +467,25 @@ exports.register = asyncHandler(async (req, res) => {
         }
     }
 
-    if (!verificationUrl) {
+    if (!verificationUrl && !firebase_uid) {
         const verificationToken = createEmailVerificationToken(user);
         verificationUrl = `${frontendUrl.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(verificationToken)}`;
     }
 
     // Do not hold registration open on a slow or unavailable email provider.
-    void emailAdapter.send({
-        to: user.email,
-        subject: 'Verify your Motsamai email address',
-        text: `Verify your Motsamai account by opening this link: ${verificationUrl}`,
-        html: `<p>Welcome to Motsamai.</p><p>Please verify your email address before signing in:</p><p><a href="${verificationUrl}">Verify my email address</a></p><p>This link expires in 24 hours.</p>`,
-    }).catch((error) => {
-        console.error('Registration verification email delivery failed', {
-            email: user.email,
-            error: error.message,
+    if (verificationUrl) {
+        void emailAdapter.send({
+            to: user.email,
+            subject: 'Verify your Motsamai email address',
+            text: `Verify your Motsamai account by opening this link: ${verificationUrl}`,
+            html: `<p>Welcome to Motsamai.</p><p>Please verify your email address before signing in:</p><p><a href="${verificationUrl}">Verify my email address</a></p><p>This link expires in 24 hours.</p>`,
+        }).catch((error) => {
+            console.error('Registration verification email delivery failed', {
+                email: user.email,
+                error: error.message,
+            });
         });
-    });
+    }
 
     await Promise.allSettled([
         syncUserToFirestore(user),
@@ -558,10 +551,11 @@ exports.login = asyncHandler(async (req, res) => {
         if (idToken) {
             const firebaseProfile = await resolveFirebaseLogin(normalizedEmail, idToken);
             if (firebaseProfile) {
+                if (!firebaseProfile.is_verified) {
+                    throw new AuthenticationError('Please verify your email before signing in');
+                }
+
                 if (!user) {
-                    if (!firebaseProfile.is_verified) {
-                        throw new AuthenticationError('Please verify your email before signing in');
-                    }
                     firebaseProfile.last_login_at = new Date();
                     const persistedProfile = await persistFirebaseProfile(firebaseProfile);
                     const firestoreUser = buildFirebaseUserProfile({

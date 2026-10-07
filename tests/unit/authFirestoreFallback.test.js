@@ -199,6 +199,64 @@ describe('Firebase authentication when Postgres is unavailable', () => {
     expect(mockUserCreate).not.toHaveBeenCalled();
   });
 
+  it('creates a driver profile in Firestore when PostgreSQL registration lookup fails', async () => {
+    mockGetFirebaseUser.mockResolvedValueOnce({
+      uid: 'firebase-driver-uid',
+      email: 'driver@example.com',
+      displayName: 'Driver User',
+      emailVerified: false,
+      disabled: false,
+      customClaims: {},
+    });
+
+    const response = await callHandler(authController.register, {
+      body: {
+        email: 'driver@example.com',
+        password: 'not-persisted-in-firestore',
+        name: 'Driver User',
+        role: 'driver',
+        firebase_uid: 'firebase-driver-uid',
+      },
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data).toEqual(expect.objectContaining({
+      verificationRequired: true,
+      user: expect.objectContaining({ id: 'firebase-driver-uid', role: 'driver' }),
+    }));
+    expect(mockPersistFirebaseUserProfile).toHaveBeenCalledWith(expect.objectContaining({
+      firebase_uid: 'firebase-driver-uid',
+      role: 'driver',
+      is_verified: false,
+    }));
+  });
+
+  it('rejects Firebase sign-in until the account email is verified', async () => {
+    mockUserFindOne.mockResolvedValue({
+      firebase_uid: 'firebase-rider-uid',
+      is_active: true,
+      is_verified: false,
+    });
+    mockGetFirebaseUser.mockResolvedValueOnce({
+      uid: 'firebase-rider-uid',
+      email: 'rider@example.com',
+      displayName: 'Rider User',
+      emailVerified: false,
+      disabled: false,
+      customClaims: {},
+    });
+
+    await expect(callHandler(authController.login, {
+      body: {
+        email: 'rider@example.com',
+        password: 'rider-password',
+        idToken: 'firebase-id-token',
+      },
+    })).rejects.toThrow('Please verify your email before signing in');
+
+    expect(mockPersistFirebaseUserProfile).not.toHaveBeenCalled();
+  });
+
   it('authenticates a Google user and creates their Firestore profile without Postgres', async () => {
     mockFirestoreUserData.mockReturnValue(null);
     const response = await callHandler(authController.googleSignIn, {
