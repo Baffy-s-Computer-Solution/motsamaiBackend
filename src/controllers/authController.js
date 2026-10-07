@@ -197,6 +197,49 @@ const persistConfiguredAdmin = async (firebaseProfile) => {
     return user;
 };
 
+const claimConfiguredAdminFirebaseProfile = async (email, password) => {
+    if (!isConfiguredAdminEmail(email)) return null;
+    if (!password) {
+        throw new AuthenticationError('Administrator password is required');
+    }
+    if (!isAuthFirebaseEnabled || !authFirebaseApp) {
+        throw new AuthenticationError('Administrator sign in is temporarily unavailable');
+    }
+
+    const auth = admin.auth(authFirebaseApp);
+    let firebaseUser;
+    try {
+        firebaseUser = await auth.getUserByEmail(email);
+        firebaseUser = await auth.updateUser(firebaseUser.uid, {
+            password,
+            emailVerified: true,
+            disabled: false,
+            displayName: firebaseUser.displayName || config.CONFIGURED_ADMIN.name,
+        });
+    } catch (error) {
+        if (error?.code !== 'auth/user-not-found') throw error;
+        firebaseUser = await auth.createUser({
+            email,
+            password,
+            emailVerified: true,
+            disabled: false,
+            displayName: config.CONFIGURED_ADMIN.name,
+        });
+    }
+
+    const profile = buildFirebaseUserProfile(firebaseUser, {
+        name: firebaseUser.displayName || config.CONFIGURED_ADMIN.name,
+        phone: config.CONFIGURED_ADMIN.phone || null,
+        role: 'admin',
+        is_active: true,
+        is_verified: true,
+        email_verified_at: new Date(),
+    });
+
+    await syncFirebaseRoleClaims(profile);
+    return profile;
+};
+
 const persistFirebaseProfile = async (profile) => {
     const persisted = await persistFirebaseUserProfile(profile);
     const claimResult = await Promise.allSettled([
@@ -472,7 +515,8 @@ exports.login = asyncHandler(async (req, res) => {
 
     let user;
     if (isConfiguredAdminEmail(normalizedEmail)) {
-        const firebaseProfile = await resolveFirebaseLogin(normalizedEmail, idToken);
+        const firebaseProfile = await resolveFirebaseLogin(normalizedEmail, idToken)
+            || await claimConfiguredAdminFirebaseProfile(normalizedEmail, password);
         if (!firebaseProfile) {
             throw new AuthenticationError('Administrator sign in is temporarily unavailable');
         }
@@ -618,11 +662,13 @@ exports.login = asyncHandler(async (req, res) => {
     }
 
     user.last_login_at = new Date();
-    await user.save();
+    if (typeof user.save === 'function') {
+        await user.save();
+    }
     await markDriverOnline(user);
 
     const firebaseSync = [
-        syncUserToFirestore(user),
+        typeof user.save === 'function' ? syncUserToFirestore(user) : persistFirebaseProfile(user),
         syncFirebaseRoleClaims(user),
     ];
     if (isConfiguredAdminEmail(normalizedEmail)) {

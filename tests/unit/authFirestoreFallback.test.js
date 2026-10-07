@@ -3,6 +3,9 @@ const mockUserCreate = jest.fn();
 const mockDriverUpdate = jest.fn();
 const mockVerifyIdToken = jest.fn();
 const mockGetFirebaseUser = jest.fn();
+const mockGetFirebaseUserByEmail = jest.fn();
+const mockUpdateFirebaseUser = jest.fn();
+const mockCreateFirebaseUser = jest.fn();
 const mockGetFirestoreUserByUid = jest.fn();
 const mockGetFirestoreUserByEmail = jest.fn();
 const mockPersistFirebaseUserProfile = jest.fn();
@@ -14,6 +17,9 @@ const mockUploadRemoteImage = jest.fn();
 const mockFirebaseAuth = {
   verifyIdToken: mockVerifyIdToken,
   getUser: mockGetFirebaseUser,
+  getUserByEmail: mockGetFirebaseUserByEmail,
+  updateUser: mockUpdateFirebaseUser,
+  createUser: mockCreateFirebaseUser,
   generateEmailVerificationLink: mockEmailVerificationLink,
 };
 const mockFirestore = {
@@ -96,6 +102,23 @@ describe('Firebase authentication when Postgres is unavailable', () => {
       is_verified: true,
     });
     mockVerifyIdToken.mockResolvedValue({ uid: 'firebase-rider-uid', email: 'rider@example.com' });
+    mockGetFirebaseUserByEmail.mockRejectedValue({ code: 'auth/user-not-found' });
+    mockUpdateFirebaseUser.mockImplementation(async (uid, updates) => ({
+      uid,
+      email: 'admin@example.com',
+      displayName: updates.displayName,
+      emailVerified: updates.emailVerified,
+      disabled: updates.disabled,
+      customClaims: {},
+    }));
+    mockCreateFirebaseUser.mockImplementation(async (user) => ({
+      uid: 'firebase-admin-uid',
+      email: user.email,
+      displayName: user.displayName,
+      emailVerified: user.emailVerified,
+      disabled: user.disabled,
+      customClaims: {},
+    }));
     mockGetFirebaseUser.mockResolvedValue({
       uid: 'firebase-rider-uid',
       email: 'rider@example.com',
@@ -197,6 +220,37 @@ describe('Firebase authentication when Postgres is unavailable', () => {
     expect(mockPersistFirebaseUserProfile).toHaveBeenCalledWith(expect.objectContaining({
       firebase_uid: 'firebase-rider-uid',
       role: 'rider',
+    }));
+  });
+
+  it('claims the configured administrator in Firebase Auth and Firestore without Postgres', async () => {
+    mockFirestoreUserData.mockReturnValue(null);
+
+    const response = await callHandler(authController.login, {
+      body: { email: 'admin@example.com', password: 'NewAdminPassword123!' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.user).toEqual(expect.objectContaining({
+      id: 'firebase-admin-uid',
+      email: 'admin@example.com',
+      role: 'admin',
+    }));
+    expect(mockCreateFirebaseUser).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'admin@example.com',
+      password: 'NewAdminPassword123!',
+      emailVerified: true,
+      disabled: false,
+    }));
+    expect(mockPersistFirebaseUserProfile).toHaveBeenCalledWith(expect.objectContaining({
+      firebase_uid: 'firebase-admin-uid',
+      role: 'admin',
+      is_active: true,
+      is_verified: true,
+    }));
+    expect(mockSyncFirebaseRoleClaims).toHaveBeenCalledWith(expect.objectContaining({
+      firebase_uid: 'firebase-admin-uid',
+      role: 'admin',
     }));
   });
 });
