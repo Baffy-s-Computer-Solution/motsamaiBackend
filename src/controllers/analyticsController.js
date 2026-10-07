@@ -3,6 +3,22 @@ const asyncHandler = require('../utils/asyncHandler');
 const { sendResponse } = require('../utils/response.util');
 const { User, Driver, Ride, Payment, sequelize } = require('../models');
 const { Op, Sequelize } = require('sequelize');
+const logger = require('../utils/logger');
+const isDatabaseUnavailable = require('../utils/isDatabaseUnavailable');
+
+const emptyRideAnalytics = (query = {}) => ({
+  total: 0,
+  byStatus: [],
+  completedRevenue: 0,
+  period: query.period || 'custom',
+  degraded: true,
+});
+
+const shouldReturnAnalyticsFallback = (error) => (
+  isDatabaseUnavailable(error)
+  || error?.name === 'SequelizeDatabaseError'
+  || error?.name === 'SequelizeConnectionError'
+);
 
 /**
  * AnalyticsController - Detailed insights for administrators
@@ -18,18 +34,38 @@ exports.getDashboardAnalytics = asyncHandler(async (req, res) => {
 });
 
 exports.getRideAnalytics = asyncHandler(async (req, res) => {
-  const where = buildDateWhere(req.query);
-  const [total, byStatus, revenue] = await Promise.all([
-    Ride.count({ where }),
-    Ride.findAll({
-      where,
-      attributes: ['status', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
-      group: ['status'],
-      raw: true,
-    }),
-    Ride.sum('fare_amount', { where: { ...where, status: 'completed' } }),
-  ]);
-  return sendResponse(res, 200, { total, byStatus, completedRevenue: Number(revenue || 0) });
+  try {
+    const where = buildDateWhere(req.query);
+    const [total, byStatus, revenue] = await Promise.all([
+      Ride.count({ where }),
+      Ride.findAll({
+        where,
+        attributes: ['status', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
+        group: ['status'],
+        raw: true,
+      }),
+      Ride.sum('fare_amount', { where: { ...where, status: 'completed' } }),
+    ]);
+    return sendResponse(res, 200, {
+      total,
+      byStatus,
+      completedRevenue: Number(revenue || 0),
+      period: req.query.period || 'custom',
+      degraded: false,
+    });
+  } catch (error) {
+    if (!shouldReturnAnalyticsFallback(error)) throw error;
+    logger.warn('Ride analytics unavailable; returning empty admin metrics', {
+      error: error.message,
+      name: error.name,
+    });
+    return sendResponse(
+      res,
+      200,
+      emptyRideAnalytics(req.query),
+      'Ride analytics are temporarily unavailable',
+    );
+  }
 });
 
 exports.getFinancialAnalytics = asyncHandler(async (req, res) => {
