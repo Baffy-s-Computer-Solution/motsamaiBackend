@@ -1,12 +1,17 @@
 const mockSet = jest.fn().mockResolvedValue(undefined);
+const mockCommit = jest.fn().mockResolvedValue(undefined);
 const mockDocGet = jest.fn();
 const mockEmailQueryGet = jest.fn();
-const mockDocRef = {
+const mockBatch = {
   set: mockSet,
+  commit: mockCommit,
+};
+const mockDocRef = {
   get: mockDocGet,
   collection: jest.fn(() => ({ doc: jest.fn(() => mockDocRef) })),
 };
 const mockFirestore = {
+  batch: jest.fn(() => mockBatch),
   collection: jest.fn(() => ({
     doc: jest.fn(() => mockDocRef),
     where: jest.fn(() => ({
@@ -38,6 +43,7 @@ describe('Firestore user profiles', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSet.mockResolvedValue(undefined);
+    mockCommit.mockResolvedValue(undefined);
     mockDocGet.mockResolvedValue({ exists: false });
   });
 
@@ -54,7 +60,9 @@ describe('Firestore user profiles', () => {
 
     expect(profile.email).toBe('rider@example.com');
     expect(mockSet).toHaveBeenCalledTimes(3);
+    expect(mockCommit).toHaveBeenCalledTimes(1);
     expect(mockSet).toHaveBeenCalledWith(
+      mockDocRef,
       expect.objectContaining({
         user_id: 'firebase-uid',
         firebase_uid: 'firebase-uid',
@@ -64,6 +72,17 @@ describe('Firestore user profiles', () => {
       }),
       { merge: true },
     );
+  });
+
+  it('propagates atomic profile write failures', async () => {
+    mockCommit.mockRejectedValue(new Error('Firestore commit failed'));
+
+    await expect(persistFirebaseUserProfile({
+      id: 'firebase-uid',
+      firebase_uid: 'firebase-uid',
+      email: 'rider@example.com',
+      role: 'rider',
+    })).rejects.toThrow('Firestore commit failed');
   });
 
   it('looks up Firestore users by Firebase UID and normalized email', async () => {

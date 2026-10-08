@@ -487,7 +487,7 @@ exports.register = asyncHandler(async (req, res) => {
         });
     }
 
-    await Promise.allSettled([
+    await Promise.all([
         syncUserToFirestore(user),
         syncFirebaseRoleClaims(user),
     ]);
@@ -596,7 +596,7 @@ exports.login = asyncHandler(async (req, res) => {
             user.last_login_at = new Date();
             await user.save();
             await markDriverOnline(user);
-            await Promise.allSettled([
+            await Promise.all([
                 syncUserToFirestore(user),
                 syncFirebaseRoleClaims(user),
             ]);
@@ -665,11 +665,7 @@ exports.login = asyncHandler(async (req, res) => {
         typeof user.save === 'function' ? syncUserToFirestore(user) : persistFirebaseProfile(user),
         syncFirebaseRoleClaims(user),
     ];
-    if (isConfiguredAdminEmail(normalizedEmail)) {
-        await Promise.all(firebaseSync);
-    } else {
-        await Promise.allSettled(firebaseSync);
-    }
+    await Promise.all(firebaseSync);
 
     const tokens = generateAuthTokens(user);
 
@@ -713,7 +709,7 @@ exports.completeBiometricLogin = asyncHandler(async (req, res) => {
     await user.save();
     await markDriverOnline(user);
 
-    await Promise.allSettled([
+    await Promise.all([
         syncUserToFirestore(user),
         syncFirebaseRoleClaims(user),
     ]);
@@ -1027,7 +1023,7 @@ exports.googleSignIn = asyncHandler(async (req, res) => {
 
     const tokens = generateAuthTokens(user);
 
-    await Promise.allSettled([
+    await Promise.all([
         syncUserToFirestore(user),
         syncFirebaseRoleClaims(user),
     ]);

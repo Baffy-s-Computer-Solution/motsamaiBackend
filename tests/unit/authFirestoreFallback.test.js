@@ -199,6 +199,53 @@ describe('Firebase authentication when Postgres is unavailable', () => {
     expect(mockUserCreate).not.toHaveBeenCalled();
   });
 
+  it('does not report successful registration when Firestore profile persistence fails', async () => {
+    mockUserFindOne.mockResolvedValue(null);
+    mockUserCreate.mockResolvedValue({
+      id: 42,
+      firebase_uid: 'firebase-rider-uid',
+      email: 'rider@example.com',
+      role: 'rider',
+      toJSON: () => ({ id: 42, email: 'rider@example.com', role: 'rider' }),
+    });
+    mockSyncUserToFirestore.mockRejectedValue(new Error('Firestore profile write failed'));
+
+    await expect(callHandler(authController.register, {
+      body: {
+        email: 'rider@example.com',
+        password: 'not-persisted-in-firestore',
+        name: 'Rider User',
+        role: 'rider',
+        firebase_uid: 'firebase-rider-uid',
+      },
+    })).rejects.toThrow('Firestore profile write failed');
+  });
+
+  it('does not report successful Google sign-in when Firestore profile persistence fails', async () => {
+    mockUserFindOne.mockResolvedValue(null);
+    mockUserCreate.mockResolvedValue({
+      id: 43,
+      firebase_uid: 'firebase-driver-uid',
+      email: 'driver@example.com',
+      role: 'driver',
+      toJSON: () => ({ id: 43, email: 'driver@example.com', role: 'driver' }),
+    });
+    mockSyncUserToFirestore.mockRejectedValue(new Error('Firestore profile write failed'));
+
+    await expect(callHandler(authController.googleSignIn, {
+      body: {
+        email: 'driver@example.com',
+        displayName: 'Driver User',
+        role: 'driver',
+      },
+      googleToken: {
+        uid: 'firebase-driver-uid',
+        email: 'driver@example.com',
+        name: 'Driver User',
+      },
+    })).rejects.toThrow('Firestore profile write failed');
+  });
+
   it('creates a driver profile in Firestore when PostgreSQL registration lookup fails', async () => {
     mockGetFirebaseUser.mockResolvedValueOnce({
       uid: 'firebase-driver-uid',

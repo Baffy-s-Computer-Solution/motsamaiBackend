@@ -52,7 +52,12 @@ const buildRoleMembershipDocument = (user) => ({
 });
 
 const syncUserToFirestore = async (user) => {
-  if (!isFirestoreUserSyncEnabled || !isFirestoreFirebaseEnabled || !firestoreFirebaseApp || !user) return;
+  if (!isFirestoreUserSyncEnabled) {
+    throw new Error('Firestore user profile sync is disabled by FIRESTORE_USER_SYNC_ENABLED=false');
+  }
+  if (!user) {
+    throw new Error('A user profile is required for Firestore synchronization');
+  }
 
   await writeUserDocuments(user);
 };
@@ -72,11 +77,11 @@ const writeUserDocuments = async (user) => {
     .collection('users')
     .doc(userDocId);
 
-  await Promise.all([
-    userDoc.set(buildUserDocument(user), { merge: true }),
-    roleDoc.set(buildRoleMembershipDocument(user), { merge: true }),
-    membershipDoc.set(buildRoleMembershipDocument(user), { merge: true }),
-  ]);
+  const batch = db.batch();
+  batch.set(userDoc, buildUserDocument(user), { merge: true });
+  batch.set(roleDoc, buildRoleMembershipDocument(user), { merge: true });
+  batch.set(membershipDoc, buildRoleMembershipDocument(user), { merge: true });
+  await batch.commit();
 };
 
 const getFirestoreUserByUid = async (uid) => {
