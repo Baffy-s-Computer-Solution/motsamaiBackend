@@ -9,6 +9,7 @@ const {
 const USERS_COLLECTION = 'users';
 const USER_ROLES_COLLECTION = 'user_roles';
 const ROLE_MEMBERSHIPS_COLLECTION = 'role_memberships';
+const SAVED_PLACES_COLLECTION = 'saved_places';
 const isFirestoreUserSyncEnabled = process.env.FIRESTORE_USER_SYNC_ENABLED !== 'false';
 
 const normalizeRole = (role) => (
@@ -113,6 +114,87 @@ const getFirestoreUserByEmail = async (email) => {
   return { ...document.data(), firebase_uid: document.data().firebase_uid || document.id };
 };
 
+const getFirestoreSavedPlaces = async (firebaseUid) => {
+  if (!firebaseUid) throw new Error('A Firebase UID is required to read saved places');
+  if (!isFirestoreFirebaseEnabled || !firestoreFirebaseApp) {
+    throw new Error('Firestore saved-place storage is unavailable');
+  }
+
+  const snapshot = await admin.firestore(firestoreFirebaseApp)
+    .collection(SAVED_PLACES_COLLECTION)
+    .where('firebase_uid', '==', String(firebaseUid))
+    .get();
+
+  return snapshot.docs
+    .map((document) => ({ id: document.id, ...document.data() }))
+    .filter((place) => place.deleted !== true)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+};
+
+const getFirestoreSavedPlaceIds = async (firebaseUid) => {
+  if (!firebaseUid) throw new Error('A Firebase UID is required to read saved-place IDs');
+  if (!isFirestoreFirebaseEnabled || !firestoreFirebaseApp) {
+    throw new Error('Firestore saved-place storage is unavailable');
+  }
+
+  const snapshot = await admin.firestore(firestoreFirebaseApp)
+    .collection(SAVED_PLACES_COLLECTION)
+    .where('firebase_uid', '==', String(firebaseUid))
+    .get();
+  return snapshot.docs.map((document) => document.id);
+};
+
+const saveFirestoreSavedPlace = async (firebaseUid, place) => {
+  if (!firebaseUid) throw new Error('A Firebase UID is required to save a place');
+  if (!place?.id) throw new Error('A stable saved-place ID is required');
+  if (!isFirestoreFirebaseEnabled || !firestoreFirebaseApp) {
+    throw new Error('Firestore saved-place storage is unavailable');
+  }
+
+  const db = admin.firestore(firestoreFirebaseApp);
+  const document = db
+    .collection(SAVED_PLACES_COLLECTION)
+    .doc(String(place.id));
+  const savedPlace = {
+    ...place,
+    id: String(place.id),
+    firebase_uid: String(firebaseUid),
+    deleted: false,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(document);
+    if (snapshot.exists && snapshot.data().firebase_uid !== String(firebaseUid)) {
+      throw new Error('Saved place does not belong to the authenticated user');
+    }
+    transaction.set(document, savedPlace, { merge: true });
+  });
+  return savedPlace;
+};
+
+const deleteFirestoreSavedPlace = async (firebaseUid, placeId) => {
+  if (!firebaseUid || !placeId) throw new Error('A Firebase UID and saved-place ID are required');
+  if (!isFirestoreFirebaseEnabled || !firestoreFirebaseApp) {
+    throw new Error('Firestore saved-place storage is unavailable');
+  }
+
+  const db = admin.firestore(firestoreFirebaseApp);
+  const document = db.collection(SAVED_PLACES_COLLECTION).doc(String(placeId));
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(document);
+    if (!snapshot.exists) return;
+    if (snapshot.data().firebase_uid !== String(firebaseUid)) {
+      throw new Error('Saved place does not belong to the authenticated user');
+    }
+    transaction.update(document, {
+      deleted: true,
+      deletedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  });
+};
+
 const persistFirebaseUserProfile = async (user) => {
   if (!user?.firebase_uid && !user?.id) {
     throw new Error('A Firebase UID is required to persist a Firestore user profile');
@@ -170,10 +252,15 @@ module.exports = {
   syncUserToFirestore,
   getFirestoreUserByUid,
   getFirestoreUserByEmail,
+  getFirestoreSavedPlaces,
+  getFirestoreSavedPlaceIds,
+  saveFirestoreSavedPlace,
+  deleteFirestoreSavedPlace,
   persistFirebaseUserProfile,
   syncAllFirebaseUsersToFirestore,
   syncFirebaseRoleClaims,
   USERS_COLLECTION,
   USER_ROLES_COLLECTION,
   ROLE_MEMBERSHIPS_COLLECTION,
+  SAVED_PLACES_COLLECTION,
 };

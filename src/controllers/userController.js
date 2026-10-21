@@ -34,7 +34,15 @@ const { validateEmail, validatePhoneNumber, validatePassword } = require('../uti
 const { CACHE_KEYS, CACHE_DURATIONS } = require('../utils/cacheKeys');
 const { USER_ROLES, USER_STATUS } = require('../constants/roles');
 const { metrics } = require('../utils/metrics');
-const { getFirestoreUserByUid } = require('../services/firestoreUserService');
+const crypto = require('crypto');
+const {
+  getFirestoreUserByUid,
+  getFirestoreSavedPlaces,
+  getFirestoreSavedPlaceIds,
+  saveFirestoreSavedPlace,
+  deleteFirestoreSavedPlace,
+} = require('../services/firestoreUserService');
+const isDatabaseUnavailable = require('../utils/isDatabaseUnavailable');
 
 /**
  * User Controller Class - Comprehensive user management
@@ -756,23 +764,62 @@ class UserController {
   });
 
   getSavedPlaces = asyncHandler(async (req, res) => {
-    const user = await User.findByPk(req.user?.id);
-    if (!user) throw new NotFoundError('User not found');
-    return sendResponse(res, 200, (user.metadata || {}).savedPlaces || [], 'Saved places retrieved');
+    const firebaseUid = req.user?.firebase_uid || req.user?.id;
+    let user = null;
+    try {
+      user = await User.findByPk(req.user?.id);
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      logger.warn('Postgres unavailable while reading saved places; serving Firestore data', {
+        firebaseUid,
+        error: error.message,
+      });
+    }
+
+    let places = await getFirestoreSavedPlaces(firebaseUid);
+    if (user) {
+      const savedPlaces = (user.metadata || {}).savedPlaces || [];
+      const firestorePlaceIds = new Set(await getFirestoreSavedPlaceIds(firebaseUid));
+      for (const place of savedPlaces) {
+        if (!firestorePlaceIds.has(String(place.id))) {
+          await saveFirestoreSavedPlace(firebaseUid, place);
+          firestorePlaceIds.add(String(place.id));
+        }
+      }
+      places = await getFirestoreSavedPlaces(firebaseUid);
+      await user.update({
+        metadata: { ...(user.metadata || {}), savedPlaces: places },
+      });
+    }
+
+    return sendResponse(res, 200, places, 'Saved places retrieved');
   });
 
   savePlace = asyncHandler(async (req, res) => {
-    const user = await User.findByPk(req.user?.id);
-    if (!user) throw new NotFoundError('User not found');
-
-    const metadata = { ...(user.metadata || {}) };
     const place = {
-      id: req.body.id || `place_${Date.now()}`,
+      id: req.body.id || crypto.randomUUID(),
       ...req.body,
       createdAt: new Date().toISOString(),
     };
-    metadata.savedPlaces = [...(metadata.savedPlaces || []), place];
-    await user.update({ metadata });
+    const firebaseUid = req.user?.firebase_uid || req.user?.id;
+    await saveFirestoreSavedPlace(firebaseUid, place);
+    const places = await getFirestoreSavedPlaces(firebaseUid);
+
+    try {
+      const user = await User.findByPk(req.user?.id);
+      if (user) {
+        await user.update({
+          metadata: { ...(user.metadata || {}), savedPlaces: places },
+        });
+      }
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      logger.warn('Saved place stored in Firestore; PostgreSQL synchronization is pending', {
+        firebaseUid,
+        placeId: place.id,
+        error: error.message,
+      });
+    }
 
     return sendResponse(res, 201, place, 'Saved place created');
   });
@@ -791,14 +838,27 @@ class UserController {
   });
 
   deleteSavedPlace = asyncHandler(async (req, res) => {
-    const user = await User.findByPk(req.user?.id);
-    if (!user) throw new NotFoundError('User not found');
+    const firebaseUid = req.user?.firebase_uid || req.user?.id;
+    await deleteFirestoreSavedPlace(firebaseUid, req.params.id);
+    const places = await getFirestoreSavedPlaces(firebaseUid);
 
-    const metadata = { ...(user.metadata || {}) };
-    metadata.savedPlaces = (metadata.savedPlaces || []).filter((place) => String(place.id) !== String(req.params.id));
-    await user.update({ metadata });
+    try {
+      const user = await User.findByPk(req.user?.id);
+      if (user) {
+        await user.update({
+          metadata: { ...(user.metadata || {}), savedPlaces: places },
+        });
+      }
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      logger.warn('Saved-place deletion stored in Firestore; PostgreSQL synchronization is pending', {
+        firebaseUid,
+        placeId: req.params.id,
+        error: error.message,
+      });
+    }
 
-    return sendResponse(res, 200, metadata.savedPlaces, 'Saved place deleted');
+    return sendResponse(res, 200, places, 'Saved place deleted');
   });
 
   setDefaultSavedPlace = asyncHandler(async (req, res) => {

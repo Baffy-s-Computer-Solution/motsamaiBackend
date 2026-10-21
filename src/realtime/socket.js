@@ -8,14 +8,12 @@ const buildCorsOrigins = () => {
   const origins = [
     ...(Array.isArray(config.CORS_ORIGINS) ? config.CORS_ORIGINS : []),
     ...(Array.isArray(config.websocket?.cors?.origin) ? config.websocket.cors.origin : []),
-    process.env.FRONTEND_URL,
-    process.env.APP_BASE_URL,
-  ].filter(Boolean);
+  ].filter((origin) => origin && origin !== '*');
 
   const uniqueOrigins = [...new Set(origins)];
 
   if (uniqueOrigins.length > 0) {
-    return uniqueOrigins.includes('*') ? '*' : uniqueOrigins;
+    return uniqueOrigins;
   }
 
   return ['http://localhost:5173', 'http://localhost:3000'];

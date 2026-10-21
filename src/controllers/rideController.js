@@ -6,6 +6,8 @@ const { ok } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { Ride, Payment, Review, Promotion, sequelize } = require('../models');
 const { Op } = require('sequelize');
+const isDatabaseUnavailable = require('../utils/isDatabaseUnavailable');
+const { listRiderRecords } = require('../services/firestoreRiderRecordService');
 
 const emitRideUpdate = (req, ride, event = 'ride_update') => {
   const io = req.app.get('io');
@@ -65,18 +67,69 @@ exports.getRideById = asyncHandler(async (req, res) => {
 });
 
 exports.getRideHistory = asyncHandler(async (req, res) => {
-  const history = await rideService.getRiderHistory(req.user.id);
+  let history;
+  try {
+    history = await rideService.getRiderHistory(req.user.id);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+
+    const firebaseUid = req.user.firebase_uid || req.user.id;
+    const records = await listRiderRecords(firebaseUid, 'booking');
+    history = records
+      .filter((record) => record.payload?.serviceType !== 'logistics')
+      .map((record) => {
+        const payload = record.payload || {};
+        return {
+          ...payload,
+          id: record.id,
+          rider_id: record.firebase_uid,
+          pickup_address: payload.pickup?.address || payload.pickup_address || null,
+          pickup_lat: payload.pickup?.lat ?? payload.pickup_lat ?? null,
+          pickup_lng: payload.pickup?.lng ?? payload.pickup_lng ?? null,
+          dropoff_address: payload.destination?.address || payload.dropoff_address || null,
+          dropoff_lat: payload.destination?.lat ?? payload.dropoff_lat ?? null,
+          dropoff_lng: payload.destination?.lng ?? payload.dropoff_lng ?? null,
+          fare_amount: payload.fare ?? payload.fare_amount ?? payload.estimatedFare ?? null,
+          distance_km: payload.fareSnapshot?.distanceKm ?? payload.distance_km ?? null,
+          vehicle_type: payload.transportMode || payload.vehicle_type || null,
+          payment_method: payload.paymentMethod || payload.payment_method || null,
+          status: record.status,
+          createdAt: record.created_at,
+          updatedAt: record.source_updated_at,
+        };
+      });
+  }
   return ok(res, history, 'Ride history fetched.');
 });
 
 exports.getActiveRide = asyncHandler(async (req, res) => {
-  const ride = await Ride.findOne({
-    where: {
-      rider_id: req.user.id,
-      status: { [Op.in]: ['requested', 'searching', 'accepted', 'arrived', 'picked_up', 'in_progress'] },
-    },
-    order: [['updated_at', 'DESC']],
-  });
+  let ride;
+  try {
+    ride = await Ride.findOne({
+      where: {
+        rider_id: req.user.id,
+        status: { [Op.in]: ['requested', 'searching', 'accepted', 'arrived', 'picked_up', 'in_progress'] },
+      },
+      order: [['updated_at', 'DESC']],
+    });
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    const firebaseUid = req.user.firebase_uid || req.user.id;
+    const bookings = await listRiderRecords(firebaseUid, 'booking');
+    const activeBooking = bookings.find((record) => (
+      ['searching', 'requested', 'accepted', 'arrived', 'picked_up', 'in_progress'].includes(record.status)
+    ));
+    ride = activeBooking
+      ? {
+          id: activeBooking.id,
+          rider_id: activeBooking.firebase_uid,
+          ...activeBooking.payload,
+          status: activeBooking.status,
+          createdAt: activeBooking.created_at,
+          updatedAt: activeBooking.source_updated_at,
+        }
+      : null;
+  }
 
   if (!ride) return ok(res, null, 'No active ride.');
   return ok(res, ride, 'Active ride fetched.');

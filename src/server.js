@@ -6,16 +6,21 @@ const { sequelize } = require('./models');
 const { connectRedis, redisClient } = require('./config/redis');
 const { initializeSocket } = require('./realtime/socket');
 const { syncAllFirebaseUsersToFirestore } = require('./services/firestoreUserService');
+const { syncPendingRiderRecords } = require('./services/firestoreRiderRecordService');
+const { isFirestoreFirebaseEnabled } = require('./config/firebase');
 
 const server = http.createServer(app);
 const io = initializeSocket(server);
 app.set('io', io);
+let riderRecordSyncTimer;
 
 const logEndpointCatalog = () => {
   const endpointGroups = [
     '/api/v1/auth',
     '/api/v1/users',
     '/api/v1/rides',
+    '/api/v1/rider',
+    '/api/v1/passenger-bookings',
     '/api/v1/drivers',
     '/api/v1/payments',
     '/api/v1/admin',
@@ -37,6 +42,33 @@ const logEndpointCatalog = () => {
 
   logger.info('Backend endpoint catalog:');
   endpointGroups.forEach((endpoint) => logger.info(`  ${endpoint}`));
+};
+
+const startRiderRecordSync = () => {
+  if (!isFirestoreFirebaseEnabled || process.env.RIDER_RECORD_SYNC_ENABLED === 'false') return;
+
+  const configuredInterval = Number(process.env.RIDER_RECORD_SYNC_INTERVAL_MS || 60000);
+  const interval = Number.isInteger(configuredInterval) && configuredInterval >= 10000
+    ? configuredInterval
+    : 60000;
+  let inProgress = false;
+
+  const synchronize = async () => {
+    if (inProgress) return;
+    inProgress = true;
+    try {
+      const result = await syncPendingRiderRecords();
+      if (result.synced) logger.info(result, 'Firestore rider records synchronized to PostgreSQL');
+    } catch (error) {
+      logger.error({ error: error.message }, 'Firestore rider-record synchronization failed');
+    } finally {
+      inProgress = false;
+    }
+  };
+
+  riderRecordSyncTimer = setInterval(synchronize, interval);
+  riderRecordSyncTimer.unref();
+  void synchronize();
 };
 
 const ensureDatabaseSchema = async () => {
@@ -66,6 +98,7 @@ const startServer = async () => {
     logger.info(`${config.APP_NAME} listening on ${config.HOST}:${config.PORT}`);
     logEndpointCatalog();
   });
+  startRiderRecordSync();
 
   try {
     if (config.SKIP_DB_CHECK) {
@@ -93,6 +126,7 @@ const startServer = async () => {
 
 const shutdown = async (signal) => {
   logger.info(`${signal} received; shutting down`);
+  if (riderRecordSyncTimer) clearInterval(riderRecordSyncTimer);
 
   server.close(async () => {
     try {
@@ -123,3 +157,4 @@ startServer();
 
 module.exports = server;
 module.exports.io = io;
+module.exports.startRiderRecordSync = startRiderRecordSync;

@@ -1,22 +1,18 @@
 const cors = require('cors');
+const config = require('../config');
 
-const allowedOrigins = (process.env.CORS_ORIGIN || process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const allowedOrigins = config.cors.origins.filter((origin) => origin !== '*');
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error('Not allowed by CORS'));
+  origin(origin, callback) {
+    callback(null, !origin || allowedOrigins.includes(origin));
   },
-  credentials: process.env.CORS_CREDENTIALS === 'true',
-  methods: process.env.CORS_METHODS || 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
-  maxAge: parseInt(process.env.CORS_MAX_AGE, 10) || 86400,
+  credentials: config.cors.credentials,
+  methods: config.cors.methods,
+  allowedHeaders: config.cors.allowedHeaders,
+  exposedHeaders: config.cors.exposedHeaders,
+  maxAge: config.cors.maxAge,
+  optionsSuccessStatus: 200,
 };
 
 module.exports = cors(corsOptions);

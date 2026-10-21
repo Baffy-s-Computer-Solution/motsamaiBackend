@@ -25,6 +25,9 @@ const CONNECTION_ERROR_CODES = new Set([
   '08003',
   '08004',
   '08006',
+  '42P01',
+  '3F000',
+  '42703',
 ]);
 
 const isDatabaseUnavailable = (error) => {

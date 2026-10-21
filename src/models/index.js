@@ -23,6 +23,7 @@ const Incident = require('./Incident')(sequelize, DataTypes);
 const SupportTicket = require('./SupportTicket')(sequelize, DataTypes);
 const AuditLog = require('./AuditLog')(sequelize, DataTypes);
 const Notification = require('./Notification')(sequelize, DataTypes);
+const RiderRecord = require('./RiderRecord')(sequelize);
 const RefreshToken = require('./RefreshToken')(sequelize, DataTypes);
 const Settings = require('./Settings')(sequelize, DataTypes);
 const Document = extraModels.Document(sequelize, DataTypes);
@@ -87,6 +88,7 @@ module.exports = {
   SupportTicket,
   AuditLog,
   Notification,
+  RiderRecord,
   RefreshToken,
   Wallet,
   Transaction,

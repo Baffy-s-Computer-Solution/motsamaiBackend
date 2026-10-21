@@ -4,7 +4,6 @@
  */
 
 const express = require('express');
-const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
@@ -13,7 +12,7 @@ const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 const fs = require('fs');
 const path = require('path');
-const config = require('./src/config');
+const cors = require('./src/middleware/cors');
 const logger = require('./src/utils/logger');
 const errorHandler = require('./src/middleware/errorHandler');
 
@@ -41,16 +40,13 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false,
     crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
 }));
+app.use((req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+});
 
-// Enable CORS with specific options
-const corsOptions = {
-    origin: config.CORS_ORIGINS,
-    credentials: true,
-    optionsSuccessStatus: 200,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Correlation-ID'],
-};
-app.use(cors(corsOptions));
+// Enable CORS only for exact origins configured in CORS_ORIGINS.
+app.use(cors);
 
 // Body parsers
 app.use(express.json({ limit: '10mb' }));
@@ -286,6 +282,10 @@ app.get('/api/v1', (req, res) => {
         '/api/v1/auth',
         '/api/v1/users',
         '/api/v1/rides',
+        '/api/v1/rider',
+        '/api/v1/passenger-bookings',
+        '/api/v1/seat-reservations',
+        '/api/v1/trips',
         '/api/v1/drivers',
         '/api/v1/payments',
         '/api/v1/admin',
@@ -335,6 +335,10 @@ const mountRoute = (basePath, routePath) => {
 mountRoute('/api/v1/auth', './src/routes/v1/authRoutes');
 mountRoute('/api/v1/users', './src/routes/v1/userRoutes');
 mountRoute('/api/v1/rides', './src/routes/v1/rideRoutes');
+mountRoute('/api/v1/rider', './src/routes/v1/riderRoutes');
+mountRoute('/api/v1/passenger-bookings', './src/routes/v1/passengerBookingRoutes');
+mountRoute('/api/v1/seat-reservations', './src/routes/v1/seatReservationRoutes');
+mountRoute('/api/v1/trips', './src/routes/v1/tripRoutes');
 mountRoute('/api/v1/drivers', './src/routes/v1/driverRoutes');
 mountRoute('/api/v1/payments', './src/routes/v1/paymentRoutes');
 mountRoute('/api/v1/admin', './src/routes/v1/adminRoutes');

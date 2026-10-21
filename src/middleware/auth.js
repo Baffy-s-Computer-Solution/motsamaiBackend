@@ -5,6 +5,31 @@ const config = require('../config');
 const logger = require('../utils/logger');
 const { getFirestoreUserByUid } = require('../services/firestoreUserService');
 const isDatabaseUnavailable = require('../utils/isDatabaseUnavailable');
+const { admin, authFirebaseApp, isAuthFirebaseEnabled } = require('../config/firebase');
+
+const verifyAccessToken = async (token) => {
+  try {
+    return jwt.verify(token, config.JWT.secret);
+  } catch (jwtError) {
+    if (!isAuthFirebaseEnabled || !authFirebaseApp) {
+      throw jwtError;
+    }
+
+    try {
+      const decoded = await admin.auth(authFirebaseApp).verifyIdToken(token, true);
+      return {
+        ...decoded,
+        id: decoded.uid,
+        firebase_uid: decoded.uid,
+      };
+    } catch (firebaseError) {
+      logger.debug('Bearer token was not accepted as a Firebase ID token', {
+        error: firebaseError.message,
+      });
+      throw new AuthenticationError('Invalid or expired authentication token');
+    }
+  }
+};
 
 const buildFirestoreAuthUser = (profile, decoded) => ({
   id: profile.user_id || decoded.id,
@@ -31,7 +56,7 @@ const auth = async (req, res, next) => {
     
     const token = authHeader.split(' ')[1];
     
-    const decoded = jwt.verify(token, config.JWT.secret);
+    const decoded = await verifyAccessToken(token);
     
     let user;
     let databaseUnavailable = false;
@@ -96,7 +121,7 @@ const optionalAuth = async (req, res, next) => {
     
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, config.JWT.secret);
+      const decoded = await verifyAccessToken(token);
       let user;
 
       if (!(decoded.firebase_uid && decoded.firebase_uid === decoded.id)) {
@@ -187,4 +212,10 @@ const requireDriverBiometric = (req, res, next) => {
   }
 };
 
-module.exports = { auth, optionalAuth, requireVerifiedDriver, requireDriverBiometric };
+module.exports = {
+  auth,
+  optionalAuth,
+  requireVerifiedDriver,
+  requireDriverBiometric,
+  verifyAccessToken,
+};
